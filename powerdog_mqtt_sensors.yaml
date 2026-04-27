@@ -1,0 +1,79 @@
+mqtt:
+  sensor:
+    # Watchdog L1 Voltage
+    - name: "Watchdog: L1 Voltage"
+      state_topic: "powerdog/L1/voltage"
+      unique_id: "watchdog_l1_voltage"
+      device_class: voltage
+      value_template: "{{ value | float(0) | round(2) }}"
+      unit_of_measurement: "V"
+
+    # Watchdog L1 Amperage
+    - name: "Watchdog: L1 Amperage"
+      state_topic: "powerdog/L1/amperage"
+      unique_id: "watchdog_l1_amperage"
+      device_class: current
+      value_template: "{{ value | float(0) | round(2) }}"
+      unit_of_measurement: "A"
+
+    # Watchdog L1 Wattage
+    - name: "Watchdog: L1 Wattage"
+      state_topic: "powerdog/L1/wattage"
+      unique_id: "watchdog_l1_wattage"
+      device_class: power
+      value_template: "{{ value | float(0) | round(2) }}"
+      unit_of_measurement: "W"
+
+    # Watchdog L1 Power
+    - name: "Watchdog: L1 Power"
+      state_topic: "powerdog/L1/power"
+      unique_id: "watchdog_l1_power"
+      device_class: energy
+      state_class: total_increasing
+      value_template: "{{ value | int(0) }}"
+      unit_of_measurement: "Wh"
+
+    # Watchdog L1 Error
+    - name: "Watchdog: L1 Error"
+      state_topic: "powerdog/L1/error"
+      unique_id: "watchdog_l1_error"
+      value_template: "{{ value | int(0) }}"
+
+    # Watchdog L2 Voltage
+    - name: "Watchdog: L2 Voltage"
+      state_topic: "powerdog/L2/voltage"
+      unique_id: "watchdog_l2_voltage"
+      device_class: voltage
+      value_template: "{{ value | float(0) | round(2) }}"
+      unit_of_measurement: "V"
+
+    # Watchdog L2 Amperage
+    - name: "Watchdog: L2 Amperage"
+      state_topic: "powerdog/L2/amperage"
+      unique_id: "watchdog_l2_amperage"
+      device_class: current
+      value_template: "{{ value | float(0) | round(2) }}"
+      unit_of_measurement: "A"
+
+    # Watchdog L2 Wattage
+    - name: "Watchdog: L2 Wattage"
+      state_topic: "powerdog/L2/wattage"
+      unique_id: "watchdog_l2_wattage"
+      device_class: power
+      value_template: "{{ value | float(0) | round(2) }}"
+      unit_of_measurement: "W"
+
+    - name: "Watchdog: L2 Power"
+      state_topic: "powerdog/L2/power"
+      unique_id: "watchdog_l2_power"
+      device_class: energy
+      state_class: total_increasing
+      value_template: "{{ value | int(0) }}"
+      unit_of_measurement: "Wh"
+      # Watchdog L2 Power
+
+    # Watchdog L2 Error
+    - name: "Watchdog: L2 Error"
+      state_topic: "powerdog/L2/error"
+      unique_id: "watchdog_l2_error"
+      value_template: "{{ value | int(0) }}"
