@@ -2,13 +2,15 @@ import asyncio
 import json
 
 from bleak import BleakClient, BleakScanner, BLEDevice
+from bleak.exc import BleakGATTProtocolError
 from data import WatchdogDataValue
 
 class DevicePrinter:
     """ create JSON string representing the metadata for a BLEDevice and service collection """
-    def __init__(self, device: BLEDevice, service_collection):
+    def __init__(self, device: BLEDevice, service_collection, read_array: []):
         self.device = device
         self.service_collection = service_collection
+        self.read_array = read_array
 
     def get_characteristic_object(item) -> {}:
         data = {'handle': item.handle, 'uuid': item.uuid, 'description': item.description, 'properties': [], 'descriptors': []}
@@ -22,7 +24,7 @@ class DevicePrinter:
         return {'handle': item.handle, 'uuid': item.uuid, 'description': item.description}
 
     def __str__(self):
-        result = {'address': self.device.address, 'name': self.device.name, 'services': {}, 'characteristics': {}, 'descriptors': {}}
+        result = {'address': self.device.address, 'name': self.device.name, 'services': {}, 'characteristics': {}, 'descriptors': {}, 'read': []}
         for key,val in self.service_collection.services.items():
             result['services'][key] = {'handle': key, 'uuid': val.uuid, 'description': val.description, 'characteristics': []}
             for item in val.characteristics:
@@ -31,6 +33,8 @@ class DevicePrinter:
             result['characteristics'][key] = DevicePrinter.get_descriptor_object(val)
         for key,val in self.service_collection.descriptors.items():
             result['descriptors'][key] = DevicePrinter.get_descriptor_object(val)
+        result['read'] = self.read_array
+
         return json.dumps(result, indent=4)
 
 class DeviceLister:
@@ -83,10 +87,36 @@ class DeviceEnumerator:
                         break
 
         async with BleakClient(address_or_ble_device=self.device) as client:
-            print(DevicePrinter(self.device, client.services))
+            read_array = []
+            for entry in client.services.characteristics.values():
+                try:
+                    data = await client.read_gatt_char(char_specifier=entry)
+                    data_hex = data.hex()
+                    data_ascii = ''
+                    try:
+                        data_ascii = bytearray.fromhex(data_hex).decode(encoding='ascii').replace('\u0000', '')
+                    except:
+                        pass
+                    read_array.append({'uuid': entry.uuid, 'data_hex': data_hex, 'data_ascii': data_ascii, 'description': entry.description, 'type': 'characteristic'})
+                except BleakGATTProtocolError as e:
+                    read_array.append({'uuid': entry.uuid, 'error_code': e.code, 'description': entry.description, 'type': 'characteristic'})
+            for entry in client.services.descriptors.values():
+                try:
+                    data = await client.read_gatt_descriptor(desc_specifier=entry, use_cached=False)
+                    data_hex = data.hex()
+                    data_ascii = ''
+                    try:
+                        data_ascii = bytearray.fromhex(data_hex).decode(encoding='ascii').replace('\u0000', '')
+                    except:
+                        pass
+                    read_array.append({'uuid': entry.uuid, 'data_hex': data_hex, 'data_ascii': data_ascii, 'description': entry.description, 'type': 'descriptor'})
+                except BleakGATTProtocolError as e:
+                    read_array.append({'uuid': entry.uuid, 'error_code': e.code, 'description': entry.description, 'type': 'descriptor'})
+
+            print(DevicePrinter(self.device, client.services, read_array=read_array))
 
 class DeviceServiceConnector:
-    """ Connect ot the device address and service_uuid for data """
+    """ Connect to the device address and service_uuid for data """
     def __init__(self, address: str, scan_sec: int = 0, notify_sec: int = 0, service_uuid: str = None, decode_data: bool = False):
         self.address = address
         self.scan_sec = scan_sec
