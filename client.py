@@ -5,6 +5,7 @@ import asyncio
 from asyncio import TaskGroup
 import configparser
 import logging
+from typing import Callable
 
 from bleak import BleakClient, BleakScanner, BLEDevice
 from bleak.backends.characteristic import BleakGATTCharacteristic
@@ -15,56 +16,109 @@ from data import WatchdogDataValue, WatchdogDataType
 
 logging.basicConfig(level=logging.INFO)
 
-class DeviceScanner:
-    def __init__(self, address: str):
-        self.logger: Logger = logging.getLogger(self.__class__.__name__)
-        self.address = address
-        self.device: BLEDevice = None
-        self.event: Event = None
+class PowerdogConfig:
+    def __init__(self):
+        self.address: str = None
+        self.service: str = None
+        self.broker_host: str = None
+        self.broker_port: int = -1
+        self.broker_user: str = None
+        self.broker_pass: str = None
+        self.subscribe_topics: bool = False
+        # TODO: add BLE timeout value
 
-    def on_detection(self, device: BLEDevice, data):
-        if self.address and not self.device and device.address == self.address:
-            self.device = device
-            self.event.set()
+    def configure(self, config_file: str):
+        config = configparser.ConfigParser()
+        config.read(config_file)
+        # POWERDOG > address is required
+        if 'POWERDOG' in config and 'address' in config['POWERDOG']:
+            self.address = config['POWERDOG'].get('address')
+        else:
+            raise configparser.NoOptionError('address', 'POWERDOG')
+        # POWERDOG > service is required
+        if 'POWERDOG' in config and 'service' in config['POWERDOG']:
+            self.service = config['POWERDOG'].get('service')
+        else:
+            raise configparser.NoOptionError('service', 'POWERDOG')
+        # BROKER section required
+        if 'BROKER' not in config:
+            raise configparser.NoSectionError('BROKER')
 
-    async def execute(self) -> BLEDevice | None:
-        async with BleakScanner(detection_callback=self.on_detection) as scanner:
-            self.event = asyncio.Event()
-            await self.event.wait()
-            self.logger.info(f'BLE client {self.device}')
-            return self.device
+        self.broker_host = config['BROKER'].get('host', fallback='localhost')
+        self.broker_port = config['BROKER'].getint('port', fallback=1883)
+        self.broker_user = config['BROKER'].get('user', fallback=None)
+        self.broker_pass = config['BROKER'].get('pass', fallback=None)
+        self.subscribe_topics = config['BROKER'].getboolean('subscribe_topics', fallback=False)
 
-class ServiceFinder:
-    def __init__(self, device: BLEDevice, uuid: str):
-        self.logger: Logger = logging.getLogger(self.__class__.__name__)
-        self.device = device
-        self.uuid = uuid
+class PowerdogMessageMapper:
+    """
+    Map the WatchdogDataType and WatchdogDataValue to MQTT topics:
+    powerdog/L1/voltage
+    powerdog/L1/amperage
+    powerdog/L1/wattage
+    powerdog/L1/power_usage
+    powerdog/L1/error
+    powerdog/L2/voltage
+    powerdog/L2/amperage
+    powerdog/L2/wattage
+    powerdog/L2/power_usage
+    powerdog/L2/error
+    """
+    def __init__(self, line: WatchdogDataType, data: WatchdogDataValue):
+        self.line: WatchdogDataType = line
+        self.data: WatchdogDataValue = data
 
-    async def execute(self) -> BleakGATTCharacteristic | None:
-        result = None
-        async with BleakClient(address_or_ble_device=self.device) as client:
-            for entry in client.services.characteristics.values():
-                if entry.uuid == self.uuid:
-                    result = entry
-                    break
-            self.logger.info(f'BLE service {result}')
-            return result
+    def messages(self) -> []:
+        result = []
+        line_code = 'L1' if self.line == WatchdogDataType.LINE1 else 'L2'
+        error_code = 0 if not self.data.error else self.data.error.value
+
+        result.append({'topic': f'powerdog/{line_code}/voltage', 'payload': self.data.voltage})
+        result.append({'topic': f'powerdog/{line_code}/amperage', 'payload': self.data.amperage})
+        result.append({'topic': f'powerdog/{line_code}/wattage', 'payload': self.data.wattage})
+        result.append({'topic': f'powerdog/{line_code}/power_usage', 'payload': self.data.power_usage})
+        result.append({'topic': f'powerdog/{line_code}/error', 'payload': error_code})
+
+        return result
 
 class ServiceNotifier:
     """
     https://bleak.readthedocs.io/en/latest/index.html
     """
-    def __init__(self, device: BLEDevice, service: BleakGATTCharacteristic, on_data_callback):
+    def __init__(self, config: PowerdogConfig, on_data_callback: Callable[[WatchdogDataValue], None]):
         self.logger: Logger = logging.getLogger(self.__class__.__name__)
-        self.device = device
-        self.service = service
-        self.prev_raw_data: str = None
+        self.config = config
         self.on_data_callback = on_data_callback
+        self.is_device_found = asyncio.Event()
+        self.is_notify_started = asyncio.Event()
+        self.device = None
+        self.service = None
+        self.prev_raw_data: str = None
 
-    def on_disconnected(self, client):
+    def on_scanner_detection(self, device: BLEDevice, data):
+        if not self.device and device.address == self.config.address:
+            self.device = device
+            self.is_device_found.set()
+            self.logger.info(f'BLE client {self.device}')
+
+    def find_service(self, client):
+        for entry in client.services.characteristics.values():
+            if entry.uuid == self.config.service:
+                self.service = entry
+                break
+        if self.service:
+            self.logger.info(f'Service found {self.service}')
+        else:
+            self.logger.warning(f'Failed to find service uuid={self.config.service}')
+
+    def on_client_disconnected(self, client):
         self.logger.info(f'Disconnected {client}')
+        self.is_notify_started.clear()
 
-    async def on_notify(self, sender: BleakGATTCharacteristic, data: bytearray):
+    async def on_service_notify(self, sender: BleakGATTCharacteristic, data: bytearray):
+        if not self.is_notify_started.is_set():
+            self.is_notify_started.set()
+            self.logger.info('Service started')
         data_hex = data.hex()
         value = WatchdogDataValue(raw_data=data_hex)
         self.logger.debug(f'on_notify {value}')
@@ -79,22 +133,33 @@ class ServiceNotifier:
         else:
             pass # TODO handle other data_type's
 
+    async def restart_loop(self, client) -> None:
+        while True:
+            if not client.is_connected:
+                self.logger.info(f'Connecting {client}')
+                try:
+                    await client.connect()
+                except asyncio.TimeoutError as e:
+                    self.logger.warning(f'Timeout when connecting {client}')
+                if client.is_connected:
+                    self.logger.info(f'Connected {client}')
+                else:
+                    self.logger.info(f'Connection failed {client}')
+            if not self.is_notify_started.is_set():
+                self.logger.info('Service starting')
+                await client.start_notify(char_specifier=self.service, callback=self.on_service_notify)
+                await self.is_notify_started.wait()
+            await asyncio.sleep(3.0)
+
     async def execute(self):
-        async with BleakClient(address_or_ble_device=self.device, disconnected_callback=self.on_disconnected) as client:
+        async with BleakScanner(detection_callback=self.on_scanner_detection) as scanner:
+            await self.is_device_found.wait()
+
+        async with BleakClient(address_or_ble_device=self.device, disconnected_callback=self.on_client_disconnected) as client:
             if client.is_connected:
                 self.logger.info(f'Connected {client}')
-            await client.start_notify(char_specifier=self.service, callback=self.on_notify)
-            await asyncio.Future() # wait forever
-
-class PowerdogConfig:
-    def __init__(self):
-        self.address: str = None
-        self.service: str = None
-        self.broker_host: str = None
-        self.broker_port: int = -1
-        self.broker_user: str = None
-        self.broker_pass: str = None
-        self.subscribe_topics: bool = False
+            self.find_service(client=client)
+            await self.restart_loop(client)
 
 class MessageSender:
     """
@@ -158,37 +223,6 @@ class MessageSender:
                 await self.subscribe_all_powerdog()
             await asyncio.Future() # wait forever
 
-class PowerdogMessageMapper:
-    """
-    Map the WatchdogDataType and WatchdogDataValue to MQTT topics:
-    powerdog/L1/voltage
-    powerdog/L1/amperage
-    powerdog/L1/wattage
-    powerdog/L1/power_usage
-    powerdog/L1/error
-    powerdog/L2/voltage
-    powerdog/L2/amperage
-    powerdog/L2/wattage
-    powerdog/L2/power_usage
-    powerdog/L2/error
-    """
-    def __init__(self, line: WatchdogDataType, data: WatchdogDataValue):
-        self.line: WatchdogDataType = line
-        self.data: WatchdogDataValue = data
-
-    def messages(self) -> []:
-        result = []
-        line_code = 'L1' if self.line == WatchdogDataType.LINE1 else 'L2'
-        error_code = 0 if not self.data.error else self.data.error.value
-
-        result.append({'topic': f'powerdog/{line_code}/voltage', 'payload': self.data.voltage})
-        result.append({'topic': f'powerdog/{line_code}/amperage', 'payload': self.data.amperage})
-        result.append({'topic': f'powerdog/{line_code}/wattage', 'payload': self.data.wattage})
-        result.append({'topic': f'powerdog/{line_code}/power_usage', 'payload': self.data.power_usage})
-        result.append({'topic': f'powerdog/{line_code}/error', 'payload': error_code})
-
-        return result
-
 class PowerdogClient:
     def __init__(self, config: PowerdogConfig):
         self.config: PowerdogConfig = config
@@ -203,14 +237,11 @@ class PowerdogClient:
         if self.sender:
             await self.sender.publish_messages(PowerdogMessageMapper(line, value).messages())
         else:
-            self.logger.warning(f'MQTT not connected line={line} value={value}')
+            self.logger.debug(f'MQTT not connected line={line} value={value}')
 
     async def execute(self):
-        device = await DeviceScanner(address=self.config.address).execute()
-        service = await ServiceFinder(device=device, uuid=self.config.service).execute()
-        
         async with TaskGroup() as group:
-            notifier = ServiceNotifier(device=device, service=service, on_data_callback=self.on_data_ready)
+            notifier = ServiceNotifier(config=self.config, on_data_callback=self.on_data_ready)
             group.create_task(notifier.execute())
             self.sender = MessageSender(config=self.config)
             group.create_task(self.sender.execute())
@@ -220,30 +251,8 @@ def main():
     arg_parser.add_argument('--config-file', help='INI style configuration file', default='config.ini')
     args = arg_parser.parse_args()
 
-    config = configparser.ConfigParser()
-    config.read(args.config_file)
-
     client_config = PowerdogConfig()
-
-    # POWERDOG > address is required
-    if 'POWERDOG' in config and 'address' in config['POWERDOG']:
-        client_config.address = config['POWERDOG'].get('address')
-    else:
-        raise configparser.NoOptionError('address', 'POWERDOG')
-    # POWERDOG > service is required
-    if 'POWERDOG' in config and 'service' in config['POWERDOG']:
-        client_config.service = config['POWERDOG'].get('service')
-    else:
-        raise configparser.NoOptionError('service', 'POWERDOG')
-    # BROKER section required
-    if 'BROKER' not in config:
-        raise configparser.NoSectionError('BROKER')
-
-    client_config.broker_host = config['BROKER'].get('host', fallback='localhost')
-    client_config.broker_port = config['BROKER'].getint('port', fallback=1883)
-    client_config.broker_user = config['BROKER'].get('user', fallback=None)
-    client_config.broker_pass = config['BROKER'].get('pass', fallback=None)
-    client_config.subscribe_topics = config['BROKER'].getboolean('subscribe_topics', fallback=False)
+    client_config.configure(config_file=args.config_file)
 
     try:
         asyncio.run(PowerdogClient(config=client_config).execute())
