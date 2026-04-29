@@ -1,4 +1,9 @@
-#!/bin/bash
+#!/usr/bin/env bash
+
+# ensure commands are run from the projects base directory in case the script is executed from somewhere else
+SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
+cd $SCRIPT_DIR
+cd ..
 
 echo 'script > delete virtualenv files'
 rm -rf __pycache__
