@@ -84,7 +84,7 @@ class AsyncMessagerClient:
 
     async def subscribe_all_powerdog(self) -> None:
         for topic in self.config.subscribe_topics:
-            self.logger.info(f'Subscribing topic={topic}')
+            self.logger.info(f'Subscribing topic = {topic}')
             await self.mqtt_client.asyncio_subscribe(topic=topic)
 
     async def execute(self):
