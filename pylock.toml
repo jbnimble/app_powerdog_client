@@ -1,0 +1,53 @@
+lock-version = "1.0"
+created-by = "pip"
+
+[[packages]]
+name = "asyncio-paho"
+version = "0.6.0"
+
+[[packages.wheels]]
+name = "asyncio_paho-0.6.0-py3-none-any.whl"
+url = "https://files.pythonhosted.org/packages/d4/7a/aba37082e928839bb8068ca4459803e22258745bf70fd24ca991b993adfb/asyncio_paho-0.6.0-py3-none-any.whl"
+
+[packages.wheels.hashes]
+sha256 = "7239dc5ec17afef1c1ea162e6c32c477c6cc728ce64740ca433b984bded122e7"
+
+[[packages]]
+name = "bleak"
+version = "3.0.1"
+
+[[packages.wheels]]
+name = "bleak-3.0.1-py3-none-any.whl"
+url = "https://files.pythonhosted.org/packages/d2/9c/839e4ff0393070396c656fa6616d0d2512f60b571c1263183e709db1c365/bleak-3.0.1-py3-none-any.whl"
+
+[packages.wheels.hashes]
+sha256 = "49f93f24ce96610529842da2d9856e7f46597e25966c0f1cfc737f0191566de6"
+
+[[packages]]
+name = "dbus-fast"
+version = "4.0.4"
+
+[[packages.wheels]]
+name = "dbus_fast-4.0.4-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl"
+url = "https://files.pythonhosted.org/packages/95/e5/056a5845b19202336caed7d3b18896c75ec059b68c16f4ded71749c9e0a2/dbus_fast-4.0.4-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl"
+
+[packages.wheels.hashes]
+sha256 = "74183b4ef4cc79a9cd1a46e006c19d00ce9abc7d99d36e6adcd094f414446d38"
+
+[[packages]]
+name = "paho-mqtt"
+version = "1.6.1"
+
+[packages.sdist]
+name = "paho-mqtt-1.6.1.tar.gz"
+url = "https://files.pythonhosted.org/packages/f8/dd/4b75dcba025f8647bc9862ac17299e0d7d12d3beadbf026d8c8d74215c12/paho-mqtt-1.6.1.tar.gz"
+
+[packages.sdist.hashes]
+sha256 = "2a8291c81623aec00372b5a85558a372c747cbca8e9934dfe218638b8eefc26f"
+
+[[packages]]
+name = "powerdog"
+
+[packages.directory]
+path = "."
+editable = true

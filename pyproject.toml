@@ -1,0 +1,20 @@
+[project]
+name = "powerdog"
+version = "0.0.1"
+authors = [
+  { name="jbnimble" },
+  { name="regregoryallen" }
+]
+description = "Watchdog to MQTT bridge"
+readme = "README.md"
+requires-python = ">=3.9"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Operating System :: OS Independent",
+]
+license = "BSD-2-Clause"
+license-files = ["LICEN[CS]E*"]
+
+[project.urls]
+Homepage = "https://github.com/jbnimble/app_powerdog_client"
+Issues = "https://github.com/jbnimble/app_powerdog_client/issues"
