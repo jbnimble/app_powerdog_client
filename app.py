@@ -10,7 +10,7 @@ def main():
     arg_parser.add_argument('--notify-sec', help='Service notify processing number of seconds', default=0)
     arg_parser.add_argument('--device-address', help='Device MAC address to connect')
     arg_parser.add_argument('--service-uuid', help='Service UUID for characteristic data')
-    arg_parser.add_argument('--decode-data', action='store_true', help='Decode the Watchdog service data, do not add for raw data')
+    arg_parser.add_argument('--decode-data', action='store_true', help='Decode the service data, do not add for raw data')
     args = arg_parser.parse_args()
 
     scan_sec = 0

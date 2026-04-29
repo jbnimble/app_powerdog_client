@@ -1,24 +1,20 @@
 # App PowerDog Client
 
-Client to interface with `Hughes Power Watchdog` via BLE
+Client to interface with `Hughes Power Watchdog` via BLE and send data to `MQTT` for use by `Home Assistant`
 
-## Development
+## Local Development
 
-```bash
-python3 -m venv .venv
-.venv/bin/pip install --requirement requirements.txt
-source .venv/bin/activate
-```
+- Git clone repository
+- Execute local dev setup script `./scripts/setup_local_dev.sh`
+- Create a `config.ini`, example [config.ini](docs/config.ini), with the values for your environment
+- Run app `./src/powerdog/client.py --config-file=data/config.ini`
 
-## App
+## App(s)
 
 The code uses `asyncio` and is setup to quit when `Ctrl-C` is used
 
 ```bash
-# help usage
-python3 app.py --help
-
-# scan all BLE devices, find the Watchdog device address, usually named "PMS..." or "PMD..."
+# scan all BLE devices, find the Watchdog device address, named "PMS..." or "PMD..."
 python3 app.py
 
 # enumerate the properties of a BLE device
@@ -27,3 +23,16 @@ python3 app.py --device-enumerate --device-address="AA:BB:CC:DD:EE:FF"
 # read the Watchdog data
 python3 app.py --device-address="AA:BB:CC:DD:EE:FF" --service-uuid="0000ffe2-0000-1000-8000-00805f9b34fb" --decode-data
 ```
+
+## Current Plans
+
+- fix `pylock.toml` to have the correct dependencies, move away from `requirements.txt`
+- set log level from config
+- reduce MQTT publish messages based on config
+- make it stable over long time periods
+
+## Future Plans
+
+- discovery for automatically finding `Watchdog` devices
+- pip installable package
+- Home Assistant native plugin
