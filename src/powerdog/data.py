@@ -5,6 +5,10 @@ from enum import Enum
 class PowerdogConfig:
     address: str = None
     service: str = None
+    limit_voltage_range: float = 0.0
+    limit_amperage_range: float = 0.0
+    limit_wattage_range: float = 0.0
+    limit_quiet_ms: int = 0
 
 @dataclass
 class BrokerConfig:

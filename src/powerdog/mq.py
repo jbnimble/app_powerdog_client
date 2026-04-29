@@ -35,11 +35,6 @@ class MessageMapper:
 
         return result
 
-class MessageLimiter:
-    def __init__(self):
-        # TODO: limit messages sent based on rules
-        pass
-
 class AsyncMessagerClient:
     """
     - Connect to MQTT broker using BrokerConfig

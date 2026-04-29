@@ -50,6 +50,29 @@ class PowerdogDecoder:
 
         return result
 
+class DataLimiter:
+    def __init__(self, config: PowerdogConfig):
+        self.config = config
+        # time_line1 and time_line2 are unix times
+        self.last_line1: PowerdogData | None = None
+        self.time_line1: int | None = None
+        self.last_line2: PowerdogData | None = None
+        self.time_line2: int | None = None
+        pass
+
+    def check(self, data: PowerdogData) -> bool:
+        result = True
+        # self.config.limit_voltage_range
+        # self.config.limit_amperage_range
+        # self.config.limit_wattage_range
+        # self.config.limit_quiet_ms
+        # limit_quiet_seconds, send if last sent data is older than quiet_seconds, if 0 then ignore
+        # limit_amps_range, send if last sent data is greater than amps_range, if 0 then ignore
+        # limit_voltage_range, send if last sent data is greater than voltage_range, if 0 then ignore
+        # limit_wattage_range, send if last sent data is greater than wattage_range
+        # error, send if last sent data changed error value
+        return result
+
 class AsyncServiceNotifier:
     """
     - Find BLEDevice that matches address
@@ -69,6 +92,7 @@ class AsyncServiceNotifier:
         self.device = None
         self.service = None
         self.prev_data: PowerdogData = None
+        self.limiter = DataLimiter(config=config)
 
     def on_scanner_detection(self, device: BLEDevice, data):
         if not self.device and device.address == self.config.address:
@@ -103,7 +127,9 @@ class AsyncServiceNotifier:
         elif self.prev_data and (pd_data.data_type == PowerdogDataType.LINE1.value or pd_data.data_type == PowerdogDataType.LINE2.value):
             result = self.prev_data
             result.data_type = pd_data.data_type # update LINE1 or LINE2 type on previous data
-            await self.on_data_callback(result)
+
+            if self.limiter.check(result):
+                await self.on_data_callback(result)
             self.prev_data = None
         else:
             self.logger.warning(f'Unhandled data={pd_data} prev={self.prev_data}')
