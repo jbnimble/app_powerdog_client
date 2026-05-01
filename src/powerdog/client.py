@@ -43,11 +43,13 @@ def main():
     br_config = config.broker()
     cl_config = config.client()
 
+    logging_format = '%(asctime)s %(levelname)s:%(name)s %(message)s'
+    logging_datefmt = '%Y-%m-%d %H:%M:%S'
     if cl_config.log_level in logging.getLevelNamesMapping():
         # this changes the global log level
-        logging.basicConfig(level=logging.getLevelNamesMapping()[cl_config.log_level])
+        logging.basicConfig(format=logging_format, level=logging.getLevelNamesMapping()[cl_config.log_level], datefmt=logging_datefmt)
     else:
-        logging.basicConfig(level=logging.INFO) # default to INFO
+        logging.basicConfig(format=logging_format, level=logging.INFO, datefmt=logging_datefmt) # default to INFO
 
     try:
         asyncio.run(PowerdogMqttBridge(pd_config=pd_config, br_config=br_config, cl_config=cl_config).execute())
