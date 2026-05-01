@@ -5,9 +5,17 @@ Client to interface with `Hughes Power Watchdog` via BLE and send data to `MQTT`
 ## Local Development
 
 - Git clone repository
-- Execute local dev setup script `./scripts/setup_local_dev.sh`
 - Create a `config.ini`, example [config.ini](docs/config.ini), with the values for your environment
-- Run app `./src/powerdog/client.py --config-file=data/config.ini`
+- Execute these commands:
+
+```bash
+# Execute local dev setup script
+./scripts/setup_local_dev.sh
+# Activate virtualenv
+source .venv/bin/activate
+# Run app
+./src/powerdog/client.py --config-file=data/config.ini
+```
 
 ## App(s)
 

@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import time
 from typing import Callable
 
 from bleak import BleakClient, BleakScanner, BLEDevice
@@ -51,26 +52,59 @@ class PowerdogDecoder:
         return result
 
 class DataLimiter:
+    """
+    Send data when any of the following is true:
+
+    - no last data sent
+    - no last time
+    - limit_quiet_sec <= 0.0
+    - last line data was > limit_quiet_sec ago
+    - limit_voltage_range > 0.0 and line voltage is limit_voltage_range greater or less than last voltage data
+    - limit_amperage_range > 0.0 and line amperage is limit_amperage_range greater or less than last amperage data
+    - limit_wattage_range > 0.0 and line wattage is limit_wattage_range greater or less than last wattage data
+    - line data error changed from last error
+    """
     def __init__(self, config: PowerdogConfig):
         self.config = config
-        # time_line1 and time_line2 are unix times
         self.last_line1: PowerdogData | None = None
         self.time_line1: int | None = None
         self.last_line2: PowerdogData | None = None
         self.time_line2: int | None = None
-        pass
 
     def check(self, data: PowerdogData) -> bool:
-        result = True
-        # self.config.limit_voltage_range
-        # self.config.limit_amperage_range
-        # self.config.limit_wattage_range
-        # self.config.limit_quiet_ms
-        # limit_quiet_seconds, send if last sent data is older than quiet_seconds, if 0 then ignore
-        # limit_amps_range, send if last sent data is greater than amps_range, if 0 then ignore
-        # limit_voltage_range, send if last sent data is greater than voltage_range, if 0 then ignore
-        # limit_wattage_range, send if last sent data is greater than wattage_range
-        # error, send if last sent data changed error value
+        result = False
+
+        if data.data_type == PowerdogDataType.LINE1.value:
+            result = self.check_data(self.last_line1, self.time_line1, data)
+        if data.data_type == PowerdogDataType.LINE2.value:
+            result = self.check_data(self.last_line2, self.time_line2, data)
+
+        if data.data_type == PowerdogDataType.LINE1.value and result:
+            self.last_line1 = data
+            self.time_line1 = time.time()
+        if data.data_type == PowerdogDataType.LINE2.value and result:
+            self.last_line2 = data
+            self.time_line2 = time.time()
+
+        return result
+
+    def check_data(self, last_data: PowerdogData, last_time: float, data: PowerdogData) -> bool:
+        result = False
+        now = time.time()
+        if not last_data or not last_time or self.config.limit_quiet_sec <= 0.0 or now - self.config.limit_quiet_sec > last_time or last_data.error != data.error:
+            result = True
+        elif self.config.limit_voltage_range > 0.0 and self.check_bounds(last_data.voltage, data.voltage, self.config.limit_voltage_range):
+            result = True
+        elif self.config.limit_amperage_range > 0.0 and self.check_bounds(last_data.amperage, data.amperage, self.config.limit_amperage_range):
+            result = True
+        elif self.config.limit_wattage_range > 0.0 and self.check_bounds(last_data.wattage, data.wattage, self.config.limit_wattage_range):
+            result = True
+        return result
+
+    def check_bounds(self, prev_value: float, curr_value: float, range_value: float) -> bool:
+        result = False
+        if curr_value < prev_value - range_value or curr_value > prev_value + range_value:
+            result = True
         return result
 
 class AsyncServiceNotifier:

@@ -40,6 +40,11 @@ class Configuration:
         else:
             raise configparser.NoOptionError('service', 'POWERDOG')
 
+        result.limit_voltage_range = self.config['POWERDOG'].getfloat('limit_voltage_range', fallback=0.0)
+        result.limit_amperage_range = self.config['POWERDOG'].getfloat('limit_amperage_range', fallback=0.0)
+        result.limit_wattage_range = self.config['POWERDOG'].getfloat('limit_wattage_range', fallback=0.0)
+        result.limit_quiet_sec = self.config['POWERDOG'].getfloat('limit_quiet_sec', fallback=0.0)
+
         return result
 
     def broker(self) -> BrokerConfig:
