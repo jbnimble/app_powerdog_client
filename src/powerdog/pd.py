@@ -168,14 +168,41 @@ class AsyncServiceNotifier:
         else:
             self.logger.warning(f'Unhandled data={pd_data} prev={self.prev_data}')
 
-    async def restart_loop(self, client) -> None:
+    async def _reset_device(self):
+        """
+        Reset the BLE device via BlueZ before retrying a connection.
+
+        A device that believes it is still connected will not advertise, making it
+        invisible to scans and unconnectable. Disconnect signals BlueZ to close its
+        end of the connection; remove wipes the device from BlueZ's cache so it is
+        rediscovered fresh on the next scan.
+        """
+        self.logger.info(f'Resetting device {self.config.address}')
+        for action in ('disconnect', 'remove'):
+            proc = await asyncio.create_subprocess_exec(
+                'bluetoothctl', action, self.config.address,
+                stdout=asyncio.subprocess.DEVNULL,
+                stderr=asyncio.subprocess.DEVNULL,
+            )
+            await proc.wait()
+            self.logger.info(f'bluetoothctl {action} {self.config.address}')
+
+    async def restart_loop(self, client) -> bool:
+        """
+        Run the notify loop until the device disconnects or a connection attempt times out.
+
+        Returns True when a connect times out, signalling that a device reset is needed
+        before the next attempt. A timeout indicates the device believes it is still
+        connected and will not respond until reset.
+        """
         while True:
             if not client.is_connected:
                 self.logger.info(f'Connecting {client}')
                 try:
                     await client.connect()
-                except asyncio.TimeoutError as e:
-                    self.logger.warning(f'Timeout when connecting {client}')
+                except asyncio.TimeoutError:
+                    self.logger.warning(f'Timeout when connecting {client}, device reset required')
+                    return True
                 if client.is_connected:
                     self.logger.info(f'Connected {client}')
                 else:
@@ -187,11 +214,43 @@ class AsyncServiceNotifier:
             await asyncio.sleep(3.0)
 
     async def execute(self):
-        async with BleakScanner(detection_callback=self.on_scanner_detection) as scanner:
-            await self.is_device_found.wait()
+        """
+        Outer loop that manages the full device lifecycle: scan, connect, notify, reset.
 
-        async with BleakClient(address_or_ble_device=self.device, disconnected_callback=self.on_client_disconnected) as client:
-            if client.is_connected:
-                self.logger.info(f'Connected {client}')
-            self.find_service(client=client)
-            await self.restart_loop(client)
+        Each iteration resets all state so the scan and connection start fresh. The scan
+        is time-bounded so that a device stuck in a phantom-connected state — which will
+        not advertise and would cause an unbounded wait — is detected and reset. A reset
+        is also triggered if the initial connect or any subsequent reconnect times out.
+        After a reset, BlueZ rediscovers the device on the next scan iteration.
+        """
+        while True:
+            self.device = None
+            self.service = None
+            self.is_device_found.clear()
+            self.is_notify_started.clear()
+
+            needs_reset = False
+
+            async with BleakScanner(detection_callback=self.on_scanner_detection) as scanner:
+                try:
+                    await asyncio.wait_for(self.is_device_found.wait(), timeout=30.0)
+                except asyncio.TimeoutError:
+                    self.logger.warning(f'Scan timeout: {self.config.address} not found, device reset required')
+                    needs_reset = True
+
+            if not needs_reset:
+                try:
+                    async with BleakClient(address_or_ble_device=self.device, disconnected_callback=self.on_client_disconnected) as client:
+                        if client.is_connected:
+                            self.logger.info(f'Connected {client}')
+                        self.find_service(client=client)
+                        needs_reset = await self.restart_loop(client)
+                except asyncio.TimeoutError:
+                    self.logger.warning(f'Timeout on initial connect to {self.config.address}, device reset required')
+                    needs_reset = True
+                except Exception as e:
+                    self.logger.warning(f'Client error: {e}')
+
+            if needs_reset:
+                await self._reset_device()
+                await asyncio.sleep(2.0)
