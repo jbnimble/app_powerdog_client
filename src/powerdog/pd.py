@@ -23,6 +23,7 @@ class PowerdogDecoder:
     def decode(raw_data: str) -> PowerdogData:
         """ Expects a hex string, decodes the values and outputs a PowerdogData """
         result = PowerdogData()
+        result.raw_data = raw_data
 
         index_06 = 6
         index_14 = 14
