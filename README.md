@@ -34,9 +34,10 @@ python3 app.py --device-address="AA:BB:CC:DD:EE:FF" --service-uuid="0000ffe2-000
 
 ## Current Plans
 
+- add `line1_topic_prefix` and `line2_topic_prefix` config
+- add bluetooth adapter name to config, in case multiple BT adapters on system
+- change logging level to `key = level` so log levels can be modified per logger
 - fix `pylock.toml` to have the correct dependencies, move away from `requirements.txt`
-- set log level from config
-- reduce MQTT publish messages based on config
 - make it stable over long time periods
 
 ## Future Plans
