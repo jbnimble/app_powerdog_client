@@ -48,6 +48,7 @@ def main():
     if cl_config.log_level in logging.getLevelNamesMapping():
         # this changes the global log level
         logging.basicConfig(format=logging_format, level=logging.getLevelNamesMapping()[cl_config.log_level], datefmt=logging_datefmt)
+        logging.getLogger('bleak').setLevel(logging.INFO) # bleak is very verbose
     else:
         logging.basicConfig(format=logging_format, level=logging.INFO, datefmt=logging_datefmt) # default to INFO
 
