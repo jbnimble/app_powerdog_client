@@ -17,26 +17,12 @@ source .venv/bin/activate
 ./src/powerdog/client.py --config-file=data/config.ini
 ```
 
-## App(s)
-
-The code uses `asyncio` and is setup to quit when `Ctrl-C` is used
-
-```bash
-# scan all BLE devices, find the Watchdog device address, named "PMS..." or "PMD..."
-python3 app.py
-
-# enumerate the properties of a BLE device
-python3 app.py --device-enumerate --device-address="AA:BB:CC:DD:EE:FF"
-
-# read the Watchdog data
-python3 app.py --device-address="AA:BB:CC:DD:EE:FF" --service-uuid="0000ffe2-0000-1000-8000-00805f9b34fb" --decode-data
-```
-
 ## Current Plans
 
+- add `line1_topic_prefix` and `line2_topic_prefix` config
+- add bluetooth adapter name to config, in case multiple BT adapters on system
+- change logging level to `key = level` so log levels can be modified per logger
 - fix `pylock.toml` to have the correct dependencies, move away from `requirements.txt`
-- set log level from config
-- reduce MQTT publish messages based on config
 - make it stable over long time periods
 
 ## Future Plans

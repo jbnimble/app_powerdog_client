@@ -30,6 +30,7 @@ class PowerdogData:
     wattage: float = None
     power_usage: float = None
     error: int = None
+    raw_data: str = None
 
 @dataclass
 class BrokerMessage:
