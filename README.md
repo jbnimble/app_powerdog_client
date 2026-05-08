@@ -1,6 +1,11 @@
 # App PowerDog Client
 
-Client to interface with `Hughes Power Watchdog` via BLE and send data to `MQTT` for use by `Home Assistant`
+Client to interface with `Watchdog` devices via Bluetooth Low Energy (BLE)
+
+- send data to MQTT broker
+- Home Assistant MQTT integration device discovery
+
+The `Watchdog` devices come in 30Amp and 50Amp configurations. A 30Amp device has LINE1 data, and a 50Amp device has LINE1/LINE2 data.
 
 ## Local Development
 
@@ -17,16 +22,16 @@ source .venv/bin/activate
 ./src/powerdog/client.py --config-file=data/config.ini
 ```
 
-## Current Plans
+## Current Plans/Ideas
 
+- HTTP client interface
+- add "RELAY ON" capability
+- add "RESET" capability
 - add `line1_topic_prefix` and `line2_topic_prefix` config
 - add bluetooth adapter name to config, in case multiple BT adapters on system
 - change logging level to `key = level` so log levels can be modified per logger
 - fix `pylock.toml` to have the correct dependencies, move away from `requirements.txt`
 - make it stable over long time periods
-
-## Future Plans
-
-- discovery for automatically finding `Watchdog` devices
 - pip installable package
 - Home Assistant native plugin
+- switch to https://github.com/empicano/aiomqtt

@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from enum import Enum
+from enum import Enum, auto
 
 @dataclass
 class PowerdogConfig:
@@ -78,3 +78,31 @@ class PowerdogDataType(Enum):
     LINE2 = 2
     RELAY = 3
     RESET = 4
+
+class PowerdogModelType(Enum):
+    SINGLE = auto()
+    DOUBLE = auto()
+
+class GattType(Enum):
+    CHARACTERISTIC = auto()
+    DESCRIPTOR = auto()
+
+@dataclass
+class GattData:
+    uuid: str = None
+    data_hex: str = None
+    data_ascii: str = None
+    description: str = None
+    error_code: int = None
+    gatt_type: GattType = None
+
+@dataclass
+class DiscoveryPayload:
+    device = None
+    origin = None
+    availability = None # [{...availability fields...}]
+    components = None # contains entries with > component_id: {...component fields...}
+    command_topic = None
+
+    def to_dict(self):
+        return self.__dict__

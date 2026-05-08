@@ -2,11 +2,15 @@ import asyncio
 import logging
 import time
 from typing import Callable
+import json
 
 from bleak import BleakClient, BleakScanner, BLEDevice
 from bleak.backends.characteristic import BleakGATTCharacteristic
+from bleak.exc import BleakGATTProtocolError
 
-from data import PowerdogData, PowerdogDataType, PowerdogConfig
+from powerdog.data import PowerdogData, PowerdogDataType, PowerdogConfig, GattData, GattType, DiscoveryPayload, PowerdogModelType, BrokerMessage
+from powerdog.util import PowerdogUtil
+from powerdog.ha import MqttDiscovery
 
 class PowerdogDecoder:
     """
@@ -71,9 +75,11 @@ class DataLimiter:
         self.time_line1: int | None = None
         self.last_line2: PowerdogData | None = None
         self.time_line2: int | None = None
+        self.now: float | None = None
 
     def check(self, data: PowerdogData) -> bool:
         result = False
+        self.now = time.time()
 
         if data.data_type == PowerdogDataType.LINE1.value:
             result = self.check_data(self.last_line1, self.time_line1, data)
@@ -91,15 +97,18 @@ class DataLimiter:
 
     def check_data(self, last_data: PowerdogData, last_time: float, data: PowerdogData) -> bool:
         result = False
-        now = time.time()
-        if not last_data or not last_time or self.config.limit_quiet_sec <= 0.0 or now - self.config.limit_quiet_sec > last_time or last_data.error != data.error:
-            result = True
+        if not last_data or not last_time:
+            result = True # no previous data
+        elif self.config.limit_quiet_sec <= 0.0 or self.now - self.config.limit_quiet_sec > last_time:
+            result = True # no quiet limit or quiet limit reached
+        elif last_data.error != data.error:
+            result = True # error state changed
         elif self.config.limit_voltage_range > 0.0 and self.check_bounds(last_data.voltage, data.voltage, self.config.limit_voltage_range):
-            result = True
+            result = True # voltage range exceeded
         elif self.config.limit_amperage_range > 0.0 and self.check_bounds(last_data.amperage, data.amperage, self.config.limit_amperage_range):
-            result = True
+            result = True # amperage range exceeded
         elif self.config.limit_wattage_range > 0.0 and self.check_bounds(last_data.wattage, data.wattage, self.config.limit_wattage_range):
-            result = True
+            result = True # wattage range exceeded
         return result
 
     def check_bounds(self, prev_value: float, curr_value: float, range_value: float) -> bool:
@@ -107,6 +116,70 @@ class DataLimiter:
         if curr_value < prev_value - range_value or curr_value > prev_value + range_value:
             result = True
         return result
+
+class AsyncDeviceInterrogator:
+    def __init__(self, config: PowerdogConfig = None):
+        self.logger: Logger = logging.getLogger(self.__class__.__name__)
+        self.config = config
+        self.is_device_found = asyncio.Event()
+        self.device = None
+        self.gatt_data = []
+
+    def on_scanner_detection(self, device: BLEDevice, data):
+        # match via config (if config exists) or match via device.name
+        if not self.device and self.config and self.config.address and device.address == self.config.address:
+            self.device = device
+            self.is_device_found.set()
+            self.logger.info(f'Device config match {self.device}')
+        elif not self.device and device and PowerdogUtil.get_model_type(device.name):
+            self.device = device
+            self.is_device_found.set()
+            self.logger.info(f'Device model match {self.device}')
+        else:
+            self.logger.info(f'Device unknown {device}')
+
+    def on_client_disconnected(self, client):
+        self.logger.info(f'Disconnected {client}')
+
+    async def execute(self) -> DiscoveryPayload | None:
+        discovery_payload = None
+        try:
+            async with BleakScanner(detection_callback=self.on_scanner_detection) as scanner:
+                self.logger.info('Scanning...')
+                await self.is_device_found.wait()
+
+            async with BleakClient(address_or_ble_device=self.device, disconnected_callback=self.on_client_disconnected) as client:
+                for entry in client.services.characteristics.values():
+                    data_hex = None
+                    data_ascii = None
+                    error_code = None
+                    try:
+                        data = await client.read_gatt_char(char_specifier=entry)
+                        data_hex = data.hex()
+                        data_ascii = PowerdogUtil.bytearray_to_ascii(data)
+                    except BleakGATTProtocolError as e:
+                        error_code = e.code
+                    gatt_item = GattData(uuid=entry.uuid, data_hex=data_hex, data_ascii=data_ascii, error_code=error_code, description=entry.description, gatt_type=GattType.CHARACTERISTIC)
+                    self.gatt_data.append(gatt_item)
+
+                for entry in client.services.descriptors.values():
+                    data_hex = None
+                    data_ascii = None
+                    error_code = None
+                    try:
+                        data = await client.read_gatt_descriptor(desc_specifier=entry, use_cached=False)
+                        data_hex = data.hex()
+                        data_ascii = PowerdogUtil.bytearray_to_ascii(data)
+                    except BleakGATTProtocolError as e:
+                        error_code = e.code
+                    gatt_item = GattData(uuid=entry.uuid, data_hex=data_hex, data_ascii=data_ascii, error_code=error_code, description=entry.description, gatt_type=GattType.DESCRIPTOR)
+                    self.gatt_data.append(gatt_item)
+
+                discovery_payload = MqttDiscovery(device_name=self.device.name, device_address=self.device.address, gatt_data=self.gatt_data).get_payload()
+        except Exception as e:
+            self.logger.error(f'Failed due to {e}')
+
+        return discovery_payload
 
 class AsyncServiceNotifier:
     """
@@ -118,22 +191,28 @@ class AsyncServiceNotifier:
 
     References: https://bleak.readthedocs.io/en/latest/index.html
     """
-    def __init__(self, config: PowerdogConfig, on_data_callback: Callable[[PowerdogData], None]):
+    def __init__(self, config: PowerdogConfig, on_data_callback: Callable[[PowerdogData], None], on_publish_callback: Callable[[[BrokerMessage]], None]):
         self.logger: Logger = logging.getLogger(self.__class__.__name__)
         self.config = config
         self.on_data_callback = on_data_callback
+        self.on_publish_callback = on_publish_callback
         self.is_device_found = asyncio.Event()
         self.is_notify_started = asyncio.Event()
         self.device = None
         self.service = None
         self.prev_data: PowerdogData = None
         self.limiter = DataLimiter(config=config)
+        self.discovery_payload = None
 
     def on_scanner_detection(self, device: BLEDevice, data):
         if not self.device and device.address == self.config.address:
             self.device = device
             self.is_device_found.set()
-            self.logger.info(f'BLE client {self.device}')
+            self.logger.info(f'BLE address match {self.device} data={data}')
+        elif not self.device and PowerdogUtil.get_model_type(device.name):
+            self.logger.info(f'BLE name match {self.device} data={data}')
+        else:
+            self.logger.debug(f'BLE unknown {self.device} data={data}')
 
     def find_service(self, client):
         for entry in client.services.characteristics.values():
@@ -153,6 +232,7 @@ class AsyncServiceNotifier:
         if not self.is_notify_started.is_set():
             self.is_notify_started.set()
             self.logger.info('Service started')
+            await self.publish_status('online')
 
         pd_data = PowerdogDecoder.decode(raw_data=data.hex())
         self.logger.debug(f'on_notify {pd_data}')
@@ -168,6 +248,22 @@ class AsyncServiceNotifier:
             self.prev_data = None
         else:
             self.logger.warning(f'Unhandled data={pd_data} prev={self.prev_data}')
+
+    async def publish_discovery(self) -> None:
+        payload = self.discovery_payload.to_dict() if self.discovery_payload else None
+        model = payload['device']['model'] if payload and payload['device'] and payload['device']['model'] else None
+        if payload and model and self.on_publish_callback:
+            topic = f'homeassistant/device/powerdog/{model}/config'
+            self.logger.info(f'Publish discovery to {topic}')
+            await self.on_publish_callback([BrokerMessage(topic, json.dumps(payload))])
+        else:
+            self.logger.warning(f'Failed to publish discovery {payload}')
+
+    async def publish_status(self, status: str):
+        if self.on_publish_callback:
+            topic = 'powerdog/status'
+            self.logger.info(f'Publish status to {topic}: {status}')
+            await self.on_publish_callback([BrokerMessage(topic, status)])
 
     async def _reset_device(self):
         """
@@ -198,6 +294,7 @@ class AsyncServiceNotifier:
         """
         while True:
             if not client.is_connected:
+                await self.publish_status('offline')
                 self.logger.info(f'Connecting {client}')
                 try:
                     await client.connect()
@@ -224,6 +321,10 @@ class AsyncServiceNotifier:
         is also triggered if the initial connect or any subsequent reconnect times out.
         After a reset, BlueZ rediscovers the device on the next scan iteration.
         """
+        await self.publish_status('offline')
+        self.discovery_payload = await AsyncDeviceInterrogator(config=self.config).execute()
+        await self.publish_discovery()
+
         while True:
             self.device = None
             self.service = None

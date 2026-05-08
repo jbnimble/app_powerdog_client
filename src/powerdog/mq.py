@@ -3,39 +3,9 @@ import logging
 
 from asyncio_paho import AsyncioPahoClient
 
-from data import PowerdogData, BrokerMessage, PowerdogDataType, BrokerConfig
+from powerdog.data import PowerdogData, BrokerMessage, PowerdogDataType, BrokerConfig
 
-class MessageMapper:
-    def map(data: PowerdogData) -> [BrokerMessage]:
-        """
-        Map the WatchdogDataType and WatchdogDataValue to MQTT topics and payloads:
-
-        - topic = powerdog/L1/voltage       payload = float
-        - topic = powerdog/L1/amperage      payload = float
-        - topic = powerdog/L1/wattage       payload = float
-        - topic = powerdog/L1/power_usage   payload = float
-        - topic = powerdog/L1/error         payload = int
-        - topic = powerdog/L2/voltage       payload = float
-        - topic = powerdog/L2/amperage      payload = float
-        - topic = powerdog/L2/wattage       payload = float
-        - topic = powerdog/L2/power_usage   payload = float
-        - topic = powerdog/L2/error         payload = int
-        """
-        result = []
-
-        line_code = 'unk'
-        if data.data_type == PowerdogDataType.LINE1.value or data.data_type == PowerdogDataType.LINE2.value:
-            line_code = f'L{data.data_type}'
-
-        result.append(BrokerMessage(topic=f'powerdog/{line_code}/voltage', payload=data.voltage))
-        result.append(BrokerMessage(topic=f'powerdog/{line_code}/amperage', payload=data.amperage))
-        result.append(BrokerMessage(topic=f'powerdog/{line_code}/wattage', payload=data.wattage))
-        result.append(BrokerMessage(topic=f'powerdog/{line_code}/power_usage', payload=data.power_usage))
-        result.append(BrokerMessage(topic=f'powerdog/{line_code}/error', payload=data.error))
-
-        return result
-
-class AsyncMessagerClient:
+class AsyncBrokerClient:
     """
     - Connect to MQTT broker using BrokerConfig
     - Send BrokerMessage's via publish_messages()
@@ -45,11 +15,12 @@ class AsyncMessagerClient:
     https://pypi.org/project/asyncio-paho/
     https://github.com/toreamun/asyncio-paho/tree/main
     """
-    def __init__(self, config: BrokerConfig):
+    def __init__(self, config: BrokerConfig, async_publish_discovery_callback):
         self.logger: Logger = logging.getLogger(self.__class__.__name__)
         self.config = config
         self.connected_flag = asyncio.Event()
         self.mqtt_client = None
+        self.async_publish_discovery_callback = async_publish_discovery_callback
 
     def update_disconnected(self, message: str = ''):
         self.connected_flag.clear()
@@ -67,7 +38,17 @@ class AsyncMessagerClient:
         self.update_disconnected(message='connection fail')
 
     async def on_subscribed(self, client, userdata, message):
-        self.logger.info(f'Subscribed topic = {message.topic}: {message.payload}')
+        self.logger.info(f'topic={message.topic} id={message.mid} qos={message.qos} retain={message.retain} state={message.state} timestamp={message.timestamp} payload={message.payload}')
+        # detect if homeassistant has changed status
+        if message.topic == 'homeassistant/status' and message.payload.decode('utf-8') == 'online':
+            if self.async_publish_discovery_callback:
+                await asyncio.sleep(2) # recommended to not immediately publish discovery after 'online' status
+                await self.async_publish_discovery_callback()
+            else:
+                self.logger.warning('Callback not available for discovery publish')
+        if message.topic == 'homeassistant/status' and message.payload.decode('utf-8') == 'offline':
+            # TODO trigger stop sending data
+            pass
 
     async def publish_messages(self, messages: [BrokerMessage]) -> None:
         if self.mqtt_client and self.mqtt_client.is_connected():
@@ -77,7 +58,7 @@ class AsyncMessagerClient:
         else:
             self.update_disconnected(message='failed to publish messages')
 
-    async def subscribe_all_powerdog(self) -> None:
+    async def subscribe_config_topics(self) -> None:
         for topic in self.config.subscribe_topics:
             self.logger.info(f'Subscribing topic = {topic}')
             await self.mqtt_client.asyncio_subscribe(topic=topic)
@@ -94,5 +75,5 @@ class AsyncMessagerClient:
             client.asyncio_listeners.add_on_connect_fail(callback=self.on_connect_fail)
             client.connect_async(host=self.config.broker_host, port=self.config.broker_port)
             await self.connected_flag.wait()
-            await self.subscribe_all_powerdog()
+            await self.subscribe_config_topics()
             await asyncio.Future() # wait forever

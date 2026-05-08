@@ -1,6 +1,6 @@
 import configparser
 
-from data import PowerdogConfig, BrokerConfig, ClientConfig
+from powerdog.data import PowerdogConfig, BrokerConfig, ClientConfig
 
 class Configuration:
     """

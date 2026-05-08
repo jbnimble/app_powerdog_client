@@ -1,0 +1,207 @@
+import importlib.metadata as meta
+
+from powerdog.data import GattData, DiscoveryPayload, PowerdogModelType
+from powerdog.util import PowerdogUtil
+
+# MQTT Discovery with Home Assistant
+# https://www.home-assistant.io/integrations/mqtt
+# Example discovery payload https://github.com/home-assistant/core/blob/dev/homeassistant/components/mqtt/schemas.py#L197
+# {
+#     'device': {
+#         'identifiers': ['MY_UNIQUE_ID'], # unique id's that identify the device
+#         'name': 'MY_UNIQUE_NAME',
+#         'model': '', # device model
+#         'model_id': '', # device model identifier
+#         'manufacturer': '', # device manufacturer
+#         'serial_number': '',
+#         'sw_version': '', # device firmware version
+#         'hw_version': '', # device hardware version
+#         'connections': [], # list of tuple for device connections to outside world, ex: [['bluetooth','AA:BB:CC:DD:EE:FF']]
+#     },
+#     'origin': {
+#         'name': 'origin application name',
+#         'sw_version': 'origin application software version',
+#         'support_url': 'origin application support URL',
+#     },
+#     'components': {
+#         'my_component_1': {
+#             'platform': 'number', # required, homeassistant/components/mqtt/const.py SUPPORTED_COMPONENTS
+#             'unique_id': 'my_component_1',
+#             'device_class': '', # # device_class vallues https://github.com/home-assistant/core/blob/dev/homeassistant/components/sensor/const.py#L90 SensorDeviceClass
+#             'unit_of_measurement': '',
+#             'state_topic': 'my/sensor/attribute',
+#         },
+#     },
+#     'qos': 2,
+#     'encoding': 'utf-8',
+#     'enabled_by_default': True, # default=True
+#     'command_topic': 'my/sensor/command/set',
+#     'availability': [
+#         {
+#             'topic': 'my/sensor/status',
+#         }
+#     ],
+# }
+
+class MqttDiscovery:
+    """ Generate the Home Assistant MQTT integration's discovery payload """
+    def __init__(self, device_name: str = None, device_address: str = None, gatt_data: [GattData] = None):
+        self.device_name = device_name
+        self.device_address = device_address
+        self.gatt_data = gatt_data
+
+    def get_payload(self) -> DiscoveryPayload:
+        result = DiscoveryPayload()
+
+        origin_name = 'powerdog'
+        device_name = self.device_name.strip()
+        device_model = device_name.split(' ')[0].strip() + device_name.split(' ')[-1].strip()
+        device_addr = self.device_address
+
+        result.command_topic = 'powerdog/set'
+        # device, see frontend > ha-device-info-card.ts
+        result.device = {
+            'name': device_name,
+            'identifiers': [device_name, device_addr],
+            'model': device_model,
+            'model_id': PowerdogUtil.get_gatt_data_value('Model Number String', self.gatt_data),
+            'manufacturer': f'Powerdog and BLE@{PowerdogUtil.get_gatt_data_value('Manufacturer Name String', self.gatt_data)}',
+            'serial_number': PowerdogUtil.get_gatt_data_value('Serial Number String', self.gatt_data),
+            'sw_version': f'Powerdog version {meta.version(origin_name)}',
+            'hw_version': f'BLE firmware {PowerdogUtil.get_gatt_data_value('Firmware Revision String', self.gatt_data)}, BLE software {PowerdogUtil.get_gatt_data_value('Software Revision String', self.gatt_data)}',
+            'connections': [['bluetooth', device_addr]],
+        }
+        # origin
+        result.origin = {
+            'name': origin_name,
+            'sw_version': meta.version(origin_name),
+            'support_url': 'https://github.com/jbnimble/app_powerdog_client',
+        }
+        # availability
+        result.availability = []
+        result.availability.append({
+            'topic': 'powerdog/status',
+        })
+        # components
+        result.components = self.components()
+
+        return result
+
+    def components(self) -> {}:
+        result = {
+            'powerdog_line1_voltage': {
+                'unique_id': 'powerdog_line1_voltage', 
+                'name': 'L1 Voltage', 
+                'device_class': 'voltage', 
+                'unit_of_measurement': 'V', 
+                'state_topic': 'powerdog/L1/voltage', 
+                'max': 150.0, # 120 + buffer
+                'platform': 'number',
+                'mode': 'box',
+            },
+            'powerdog_line1_amperage': {
+                'unique_id': 'powerdog_line1_amperage', 
+                'name': 'L1 Amperage', 
+                'device_class': 'current', 
+                'unit_of_measurement': 'A', 
+                'state_topic': 'powerdog/L1/amperage', 
+                'max': 50.0, # 30A + buffer
+                'platform': 'number',
+                'mode': 'box',
+            },
+            'powerdog_line1_wattage': {
+                'unique_id': 'powerdog_line1_wattage', 
+                'name': 'L1 Wattage', 
+                'device_class': 'power', 
+                'unit_of_measurement': 'W', 
+                'state_topic': 'powerdog/L1/wattage', 
+                'max': 4000.0, # 120V * 30A + buffer
+                'platform': 'number',
+                'mode': 'box',
+            },
+            'powerdog_line1_power_usage': {
+                'unique_id': 'powerdog_line1_power_usage',
+                'name': 'L1 Usage',
+                'device_class': 'power',
+                'unit_of_measurement': 'Wh',
+                'state_topic': 'powerdog/L1/power_usage',
+                'max': 1000000.0, # 1M, not sure of upper limit
+                'platform': 'number',
+                'mode': 'box',
+            },
+            'powerdog_line1_error_code': {
+                'unique_id': 'powerdog_line1_error_code',
+                'name': 'L1 Code',
+                'state_topic': 'powerdog/L1/error_code',
+                'platform': 'number',
+                'mode': 'box',
+            },
+            'powerdog_line1_error_status': {
+                'unique_id': 'powerdog_line1_error_status',
+                'name': 'L1 Error',
+                'state_topic': 'powerdog/L1/error_status',
+                'platform': 'text',
+                'mode': 'text',
+            },
+        }
+
+        if PowerdogUtil.get_model_type(name=self.device_name) == PowerdogModelType.DOUBLE:
+            line2_result = {
+                'powerdog_line2_voltage': {
+                    'unique_id': 'powerdog_line2_voltage', 
+                    'name': 'L2 Voltage', 
+                    'device_class': 'voltage', 
+                    'unit_of_measurement': 'V', 
+                    'state_topic': 'powerdog/L2/voltage', 
+                    'max': 150.0, # 120 + buffer
+                    'platform': 'number',
+                    'mode': 'box',
+                },
+                'powerdog_line2_amperage': {
+                    'unique_id': 'powerdog_line2_amperage', 
+                    'name': 'L2 Amperage', 
+                    'device_class': 'current', 
+                    'unit_of_measurement': 'A', 
+                    'state_topic': 'powerdog/L2/amperage', 
+                    'max': 50.0, # 30A + buffer
+                    'platform': 'number',
+                    'mode': 'box',
+                },
+                'powerdog_line2_wattage': {
+                    'unique_id': 'powerdog_line2_wattage', 
+                    'name': 'L2 Wattage', 
+                    'device_class': 'power', 
+                    'unit_of_measurement': 'W', 
+                    'state_topic': 'powerdog/L2/wattage', 
+                    'max': 4000.0, # 120V * 30A + buffer
+                    'platform': 'number',
+                    'mode': 'box',
+                },
+                'powerdog_line2_power_usage': {
+                    'unique_id': 'powerdog_line2_power_usage',
+                    'name': 'L2 Usage',
+                    'device_class': 'power',
+                    'unit_of_measurement': 'Wh',
+                    'state_topic': 'powerdog/L2/power_usage',
+                    'max': 1000000.0, # 1M, not sure of upper limit
+                    'platform': 'number',
+                    'mode': 'box',
+                },
+                'powerdog_line2_error_code': {
+                    'unique_id': 'powerdog_line2_error_code',
+                    'name': 'L2 Code',
+                    'state_topic': 'powerdog/L2/error_code',
+                    'platform': 'number',
+                    'mode': 'box',
+                },
+                'powerdog_line2_error_status': {
+                    'unique_id': 'powerdog_line2_error_status',
+                    'name': 'L2 Error',
+                    'state_topic': 'powerdog/L2/error_status',
+                    'platform': 'text',
+                    'mode': 'text',
+                },
+            }
+            result.update(line2_result)
+        return result
+
