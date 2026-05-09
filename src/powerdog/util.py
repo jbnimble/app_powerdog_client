@@ -64,7 +64,7 @@ class PowerdogUtil:
         Map the error code and data to textual error descriptions
         Add unsafe/high/low context for voltage errors
         """
-        result = 'None'
+        result = 'OK'
         if PowerdogDataError.VOLTAGE_1.value == data.error:
             desc = 'low' if data.voltage < 104.0 else 'unsafe'
             desc = 'high' if data.voltage > 132.0 else desc
