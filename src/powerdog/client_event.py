@@ -69,9 +69,9 @@ class App:
         self.logger.info('BLE scanner > stop')
         self.service.ble_scanner.stop_scanner()
 
-    def start_ble_client(self, device: BLEDevice) -> None:
-        self.logger.info(f'BLE client > start {device}')
-        self.service.ble_client = BluetoothEventClient(device=device, create_event_cb=self.create_task, on_event_cb=self.on_event_data)
+    def start_ble_client(self) -> None:
+        self.logger.info(f'BLE client > start {self.data.ble_device}')
+        self.service.ble_client = BluetoothEventClient(device=self.data.ble_device, create_event_cb=self.create_task, on_event_cb=self.on_event_data)
         self.task_group.create_task(self.service.ble_client.start_client())
 
     def stop_ble_client(self) -> None:
@@ -193,7 +193,7 @@ class App:
                 # connect BLE device if config address match
                 if device.address == self.data.pd_config.address:
                     self.data.ble_device = device
-                    self.start_ble_client(self.data.ble_device)
+                    self.start_ble_client()
                     self.stop_ble_scanner()
             elif event_data.name == BluetoothEvent.BLE_CLIENT_STARTED:
                 self.logger.info(f'BLE client > started {event_data.data}')
