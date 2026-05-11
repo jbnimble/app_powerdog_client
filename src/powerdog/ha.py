@@ -61,6 +61,10 @@ class MqttDiscovery:
         device_model = device_name.split(' ')[0].strip() + device_name.split(' ')[-1].strip()
         device_addr = self.device_address
 
+        fw_version = PowerdogUtil.get_gatt_data_value('Firmware Revision String', self.gatt_data)
+        sw_version = PowerdogUtil.get_gatt_data_value('Software Revision String', self.gatt_data)
+        manufacturer = PowerdogUtil.get_gatt_data_value('Manufacturer Name String', self.gatt_data)
+
         result.command_topic = 'powerdog/set'
         # device, see frontend > ha-device-info-card.ts
         result.device = {
@@ -68,10 +72,10 @@ class MqttDiscovery:
             'identifiers': [device_name, device_addr],
             'model': device_model,
             'model_id': PowerdogUtil.get_gatt_data_value('Model Number String', self.gatt_data),
-            'manufacturer': f'Powerdog and BLE@{PowerdogUtil.get_gatt_data_value('Manufacturer Name String', self.gatt_data)}',
+            'manufacturer': f'Powerdog and BLE@{manufacturer}',
             'serial_number': PowerdogUtil.get_gatt_data_value('Serial Number String', self.gatt_data),
             'sw_version': f'Powerdog version {meta.version(origin_name)}',
-            'hw_version': f'BLE firmware {PowerdogUtil.get_gatt_data_value('Firmware Revision String', self.gatt_data)}, BLE software {PowerdogUtil.get_gatt_data_value('Software Revision String', self.gatt_data)}',
+            'hw_version': f'BLE firmware {fw_version}, BLE software {sw_version}',
             'connections': [['bluetooth', device_addr]],
         }
         # origin
