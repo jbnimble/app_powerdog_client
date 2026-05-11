@@ -35,7 +35,7 @@ class AppData:
         self.br_config: BrokerConfig = br_config
         self.cl_config: ClientConfig = cl_config
         self.mqtt_discovery: MqttDiscovery = None
-        self.prev_data:PowerdogData = None
+        self.prev_data: PowerdogData = None
         self.discovery_topic: str = None
         self.gatt_data: [GattData] = None
         self.ble_device: BLEDevice = None
@@ -123,7 +123,8 @@ class App:
         self.task_group.create_task(self.service.ble_client.get_gatt_data())
 
     async def publish_discovery_payload(self) -> None:
-        discovery_payload = MqttDiscovery(device_name=self.service.ble_client.device.name, device_address=self.service.ble_client.device.address, gatt_data=self.data.gatt_data).get_payload()
+        self.data.mqtt_discovery = MqttDiscovery(device_name=self.data.ble_device.name, device_address=self.data.ble_device.address, gatt_data=self.data.gatt_data)
+        discovery_payload = self.data.mqtt_discovery.get_payload()
         payload = discovery_payload.to_dict()
         model = payload['device']['model'] if payload and payload['device'] and payload['device']['model'] else None
         if payload and model:
