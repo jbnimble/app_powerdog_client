@@ -1,4 +1,5 @@
 import asyncio
+from asyncio import Task
 from enum import StrEnum
 import logging
 import platform
@@ -12,17 +13,19 @@ from powerdog.data import GattData, GattType
 from powerdog.util import PowerdogUtil
 
 class BluetoothEvent(StrEnum):
-    BLE_SCANNER_DEVICE =  'ble_scanner_device'
-    BLE_SCANNER_STARTED = 'ble_scanner_started'
-    BLE_SCANNER_STOPPED = 'ble_scanner_stopped'
-    BLE_CLIENT_STARTED =  'ble_client_started'
-    BLE_CLIENT_STOPPED =  'ble_client_stopped'
-    BLE_CLIENT_CLOSED =   'ble_client_closed'
-    BLE_NOTIFY_STARTED =  'ble_notify_started'
-    BLE_NOTIFY_STOPPED =  'ble_notify_stopped'
-    BLE_SERVICE_FOUND =   'ble_service_found'
-    BLE_NOTIFY_DATA =     'ble_notify_data'
-    BLE_GATT_DATA =       'ble_gatt_data'
+    BLE_SCANNER_DEVICE =    'ble_scanner_device'
+    BLE_SCANNER_STARTED =   'ble_scanner_started'
+    BLE_SCANNER_STOPPED =   'ble_scanner_stopped'
+    BLE_CLIENT_STARTED =    'ble_client_started'
+    BLE_CLIENT_STOPPED =    'ble_client_stopped'
+    BLE_CLIENT_CLOSED =     'ble_client_closed'
+    BLE_NOTIFY_STARTED =    'ble_notify_started'
+    BLE_NOTIFY_FAIL_START = 'ble_notify_fail_start'
+    BLE_NOTIFY_FAIL_STOP =  'ble_notify_fail_stop'
+    BLE_NOTIFY_STOPPED =    'ble_notify_stopped'
+    BLE_SERVICE_FOUND =     'ble_service_found'
+    BLE_NOTIFY_DATA =       'ble_notify_data'
+    BLE_GATT_DATA =         'ble_gatt_data'
 
 class BluetoothEventClient:
     """
@@ -84,13 +87,19 @@ class BluetoothEventClient:
             task = self.create_event_cb(self.context.stop_notify(self.notify_specifier))
             task.add_done_callback(self.on_task_notify_stopped)
 
-    def on_task_notify_started(self, task) -> None:
-        if task.done():
+    def on_task_notify_started(self, task: Task) -> None:
+        task_error = task.exception()
+        if task_error:
+            self.on_event(EventData(BluetoothEvent.BLE_NOTIFY_FAIL_START, task_error))
+        else:
             self.notify_activated.set()
             self.on_event(EventData(BluetoothEvent.BLE_NOTIFY_STARTED))
 
-    def on_task_notify_stopped(self, task) -> None:
-        if task.done():
+    def on_task_notify_stopped(self, task: Task) -> None:
+        task_error = task.exception()
+        if task_error:
+            self.on_event(EventData(BluetoothEvent.BLE_NOTIFY_FAIL_STOP, task_error))
+        else:
             self.notify_activated.clear()
             self.on_event(EventData(BluetoothEvent.BLE_NOTIFY_STOPPED))
 
