@@ -6,6 +6,7 @@ from powerdog.util import PowerdogUtil
 # MQTT Discovery with Home Assistant
 # https://www.home-assistant.io/integrations/mqtt
 # Example discovery payload https://github.com/home-assistant/core/blob/dev/homeassistant/components/mqtt/schemas.py#L197
+# Platform > sensor https://www.home-assistant.io/integrations/sensor/
 # {
 #     'device': {
 #         'identifiers': ['MY_UNIQUE_ID'], # unique id's that identify the device
@@ -25,9 +26,11 @@ from powerdog.util import PowerdogUtil
 #     },
 #     'components': {
 #         'my_component_1': {
-#             'platform': 'number', # required, homeassistant/components/mqtt/const.py SUPPORTED_COMPONENTS
+#             'platform': 'sensor', # required, homeassistant/components/mqtt/const.py SUPPORTED_COMPONENTS
 #             'unique_id': 'my_component_1',
-#             'device_class': '', # # device_class vallues https://github.com/home-assistant/core/blob/dev/homeassistant/components/sensor/const.py#L90 SensorDeviceClass
+#             'device_class': '', # SensorDeviceClass https://github.com/home-assistant/core/blob/dev/homeassistant/components/sensor/const.py#L90
+#             'state_class': '', # SensorStateClass
+#             'entity_category': '', # EntityCategory
 #             'unit_of_measurement': '',
 #             'state_topic': 'my/sensor/attribute',
 #         },
@@ -126,6 +129,7 @@ class MqttDiscovery:
                 'device_class': 'energy',
                 'unit_of_measurement': 'Wh',
                 'state_class': 'total_increasing',
+                'suggested_display_precision': 2,
                 'state_topic': 'powerdog/L1/power_usage',
             },
             'powerdog_line1_error_code': {
@@ -181,6 +185,7 @@ class MqttDiscovery:
                     'device_class': 'energy',
                     'unit_of_measurement': 'Wh',
                     'state_class': 'total_increasing',
+                    'suggested_display_precision': 2,
                     'state_topic': 'powerdog/L2/power_usage',
                 },
                 'powerdog_line2_error_code': {
