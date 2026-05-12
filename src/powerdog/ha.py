@@ -29,9 +29,9 @@ from powerdog.util import PowerdogUtil
 #             'platform': 'sensor', # required, homeassistant/components/mqtt/const.py SUPPORTED_COMPONENTS
 #             'unique_id': 'my_component_1',
 #             'device_class': '', # SensorDeviceClass https://github.com/home-assistant/core/blob/dev/homeassistant/components/sensor/const.py#L90
-#             'state_class': '', # SensorStateClass
+#             'state_class': '', # SensorStateClass measurement|measurement_angle|total|total_increasing
 #             'entity_category': '', # EntityCategory
-#             'unit_of_measurement': '',
+#             'unit_of_measurement': '', # UnitOfEnergy,UnitOfPower
 #             'state_topic': 'my/sensor/attribute',
 #         },
 #     },
@@ -121,7 +121,7 @@ class MqttDiscovery:
                 'name': 'L1 Wattage',
                 'platform': 'sensor',
                 'device_class': 'power',
-                'unit_of_measurement': 'W',
+                'unit_of_measurement': 'kW',
                 'state_class': 'measurement',
                 'suggested_display_precision': 2,
                 'state_topic': 'powerdog/L1/wattage',
@@ -131,8 +131,8 @@ class MqttDiscovery:
                 'name': 'L1 Usage',
                 'platform': 'sensor',
                 'device_class': 'energy',
-                'unit_of_measurement': 'Wh',
-                'state_class': 'total_increasing',
+                'unit_of_measurement': 'kWh',
+                'state_class': 'total',
                 'suggested_display_precision': 2,
                 'state_topic': 'powerdog/L1/power_usage',
             },
@@ -177,7 +177,7 @@ class MqttDiscovery:
                     'name': 'L2 Wattage',
                     'platform': 'sensor',
                     'device_class': 'power',
-                    'unit_of_measurement': 'W',
+                    'unit_of_measurement': 'kW',
                     'state_class': 'measurement',
                     'suggested_display_precision': 2,
                     'state_topic': 'powerdog/L2/wattage',
@@ -187,8 +187,8 @@ class MqttDiscovery:
                     'name': 'L2 Usage',
                     'platform': 'sensor',
                     'device_class': 'energy',
-                    'unit_of_measurement': 'Wh',
-                    'state_class': 'total_increasing',
+                    'unit_of_measurement': 'kWh',
+                    'state_class': 'total',
                     'suggested_display_precision': 2,
                     'state_topic': 'powerdog/L2/power_usage',
                 },
