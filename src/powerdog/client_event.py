@@ -186,12 +186,12 @@ class App:
             if event_data.name == BluetoothEvent.BLE_SCANNER_STARTED:
                 self.logger.info(f'BLE scanner > started {event_data.data}')
             elif event_data.name == BluetoothEvent.BLE_SCANNER_STOPPED:
-                self.logger.info(f'BLE scanner > stopped {event_data.data}')
+                self.logger.info(f'BLE scanner > stopped')
             elif event_data.name == BluetoothEvent.BLE_SCANNER_DEVICE:
                 device = event_data.data['device']
                 self.logger.info(f'Device found > {device}')
                 # connect BLE device if config address match
-                if device.address == self.data.pd_config.address:
+                if device.address == self.data.pd_config.address and device.name:
                     self.data.ble_device = device
                     self.start_ble_client()
                     self.stop_ble_scanner()
