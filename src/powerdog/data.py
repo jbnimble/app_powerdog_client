@@ -9,6 +9,7 @@ class PowerdogConfig:
     limit_amperage_range: float = 0.0
     limit_wattage_range: float = 0.0
     limit_quiet_sec: float = 0.0
+    device_meta_path: str = None
 
 @dataclass
 class BrokerConfig:
@@ -82,6 +83,7 @@ class PowerdogDataType(Enum):
 class PowerdogModelType(Enum):
     SINGLE = auto()
     DOUBLE = auto()
+    UNKNOWN = auto()
 
 class GattType(Enum):
     CHARACTERISTIC = auto()
@@ -106,3 +108,33 @@ class DiscoveryPayload:
 
     def to_dict(self):
         return self.__dict__
+
+@dataclass
+class DeviceMetaBase:
+    handle: int = None
+    uuid: str = None
+    description: str = None
+
+@dataclass
+class DeviceMetaDesc(DeviceMetaBase):
+    hex_data: str = None
+    asc_data: str = None
+
+@dataclass
+class DeviceMetaChar(DeviceMetaDesc):
+    properties: [str] = None
+    descriptor: [DeviceMetaDesc] = None
+
+@dataclass
+class DeviceMetaService(DeviceMetaBase):
+    characteristic: [DeviceMetaChar] = None
+
+@dataclass
+class BluetoothDeviceMeta:
+    name: str = None
+    address: str = None
+    details: dict = None
+    service: [DeviceMetaService] = None
+
+    def __str__(self) -> str:
+        return f'{self.__dict__}'

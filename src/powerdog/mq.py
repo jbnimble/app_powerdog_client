@@ -98,6 +98,7 @@ class BrokerEventClient:
         self.config = config
         self.on_event_cb = on_event_cb
         self.context_keep_alive = asyncio.Event()
+        self.context_keep_alive.set()
         self.context: AsyncioPahoClient = None
         self.subscribed_topics = set()
 
@@ -139,6 +140,9 @@ class BrokerEventClient:
 
     def stop_client(self) -> None:
         self.context_keep_alive.set()
+
+    def is_stopped(self) -> bool:
+        return (not self.context and self.context_keep_alive.is_set()) or (self.context and not self.context.is_connected())
 
     async def subscribe(self, topic: str) -> None:
         if topic and self.context and self.context.is_connected() and topic not in self.subscribed_topics:

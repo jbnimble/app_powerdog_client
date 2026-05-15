@@ -1,29 +1,32 @@
-from powerdog.data import PowerdogModelType, GattData, PowerdogData, PowerdogDataError, PowerdogDataType, BrokerMessage
+from typing import Any
+
+from powerdog.data import PowerdogModelType, GattData, PowerdogData, PowerdogDataError, PowerdogDataType, BrokerMessage, BluetoothDeviceMeta, DeviceMetaService, DeviceMetaChar, DeviceMetaDesc
 
 class PowerdogUtil:
     def bytearray_to_ascii(data: bytearray) -> str:
-        result = data
+        result = ''
         try:
-            result = bytearray.fromhex(data.hex()).decode(encoding='ascii').replace('\u0000', '')
+            result = data.decode(encoding='ascii')
         except:
             pass
         return result
 
-    def get_model_type(name: str) -> PowerdogModelType | None:
+    def get_model_type(name: str) -> PowerdogModelType:
         """ The BLE device name starts with `PMS` for single line and `PMD` for double line data """
-        result = None
+        result = PowerdogModelType.UNKNOWN
         if name and name.startswith('PMS'):
             result = PowerdogModelType.SINGLE
-        if name and name.startswith('PMD'):
+        elif name and name.startswith('PMD'):
             result = PowerdogModelType.DOUBLE
         return result
 
     def get_gatt_data_value(desc: str, gatt_data: [GattData]) -> str:
-        result = ''
-        for data in gatt_data:
-            if data and data.description == desc:
-                result = data.data_ascii
-                break
+        result = 'Unknown'
+        if gatt_data:
+            for data in gatt_data:
+                if data and data.description == desc:
+                    result = data.data_ascii
+                    break
         return result
 
     def get_broker_messages(data: PowerdogData) -> [BrokerMessage]:
@@ -88,3 +91,12 @@ class PowerdogUtil:
         elif PowerdogDataError.SURGE_REPLACE.value == data.error:
             result = 'E9: replace surge protection board'
         return result
+
+    def json_serializer(obj: Any) -> Any:
+        if isinstance(obj, bool):
+            return f'{obj}'
+        elif isinstance(obj, bytes):
+            return obj.hex()
+        elif isinstance(obj, BluetoothDeviceMeta) or isinstance(obj, DeviceMetaService) or isinstance(obj, DeviceMetaChar) or isinstance(obj, DeviceMetaDesc):
+            return obj.__dict__
+        raise TypeError(f'Object of type {type(obj).__name__} is not JSON serializable')

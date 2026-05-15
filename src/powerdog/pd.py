@@ -131,7 +131,7 @@ class AsyncDeviceInterrogator:
             self.device = device
             self.is_device_found.set()
             self.logger.info(f'Device config match {self.device}')
-        elif not self.device and device and PowerdogUtil.get_model_type(device.name):
+        elif not self.device and device and PowerdogUtil.get_model_type(device.name) != PowerdogModelType.UNKNOWN:
             self.device = device
             self.is_device_found.set()
             self.logger.info(f'Device model match {self.device}')
@@ -209,7 +209,7 @@ class AsyncServiceNotifier:
             self.device = device
             self.is_device_found.set()
             self.logger.info(f'BLE address match {self.device} data={data}')
-        elif not self.device and PowerdogUtil.get_model_type(device.name):
+        elif not self.device and PowerdogUtil.get_model_type(device.name) != PowerdogModelType.UNKNOWN:
             self.logger.info(f'BLE name match {self.device} data={data}')
         else:
             self.logger.debug(f'BLE unknown {self.device} data={data}')

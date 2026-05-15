@@ -30,20 +30,15 @@ class Configuration:
         result = PowerdogConfig()
 
         # POWERDOG > address is required
-        if 'POWERDOG' in self.config and 'address' in self.config['POWERDOG']:
-            result.address = self.config['POWERDOG'].get('address')
-        else:
-            raise configparser.NoOptionError('address', 'POWERDOG')
-        # POWERDOG > service is required
-        if 'POWERDOG' in self.config and 'service' in self.config['POWERDOG']:
-            result.service = self.config['POWERDOG'].get('service')
-        else:
-            raise configparser.NoOptionError('service', 'POWERDOG')
-
-        result.limit_voltage_range = self.config['POWERDOG'].getfloat('limit_voltage_range', fallback=0.0)
-        result.limit_amperage_range = self.config['POWERDOG'].getfloat('limit_amperage_range', fallback=0.0)
-        result.limit_wattage_range = self.config['POWERDOG'].getfloat('limit_wattage_range', fallback=0.0)
-        result.limit_quiet_sec = self.config['POWERDOG'].getfloat('limit_quiet_sec', fallback=0.0)
+        section_key = 'POWERDOG'
+        if  section_key in self.config:
+            result.address = self.config[section_key].get('address', fallback=None)
+            result.service = self.config[section_key].get('service', fallback=None)
+            result.limit_voltage_range = self.config[section_key].getfloat('limit_voltage_range', fallback=0.0)
+            result.limit_amperage_range = self.config[section_key].getfloat('limit_amperage_range', fallback=0.0)
+            result.limit_wattage_range = self.config[section_key].getfloat('limit_wattage_range', fallback=0.0)
+            result.limit_quiet_sec = self.config[section_key].getfloat('limit_quiet_sec', fallback=0.0)
+            result.device_meta_path = self.config[section_key].get('device_meta_path', fallback=None)
 
         return result
 
@@ -51,27 +46,25 @@ class Configuration:
         result = BrokerConfig()
 
         # BROKER section required
-        if 'BROKER' not in self.config:
-            raise configparser.NoSectionError('BROKER')
-
-        result.broker_host = self.config['BROKER'].get('host', fallback='localhost')
-        result.broker_port = self.config['BROKER'].getint('port', fallback=1883)
-        result.broker_user = self.config['BROKER'].get('user', fallback=None)
-        result.broker_pass = self.config['BROKER'].get('pass', fallback=None)
-        if 'subscribe_topics' in self.config['BROKER'] and len(self.config['BROKER'].get('subscribe_topics')) > 0:
-            topics = self.config['BROKER'].get('subscribe_topics')
-            result.subscribe_topics = topics.split(',')
-        else:
-            result.subscribe_topics = []
+        section_key = 'BROKER'
+        if section_key in self.config:
+            result.broker_host = self.config[section_key].get('host', fallback=None)
+            result.broker_port = self.config[section_key].getint('port', fallback=1883)
+            result.broker_user = self.config[section_key].get('user', fallback=None)
+            result.broker_pass = self.config[section_key].get('pass', fallback=None)
+            if 'subscribe_topics' in self.config[section_key] and len(self.config[section_key].get('subscribe_topics')) > 0:
+                topics = self.config[section_key].get('subscribe_topics')
+                result.subscribe_topics = topics.split(',')
+            else:
+                result.subscribe_topics = []
 
         return result
 
     def client(self) -> ClientConfig:
         result = ClientConfig()
 
-        if 'CLIENT' not in self.config:
-            raise configparser.NoSectionError('CLIENT')
-
-        result.log_level = self.config['CLIENT'].get('log_level', fallback='INFO')
+        section_key = 'CLIENT'
+        if section_key in self.config:
+            result.log_level = self.config[section_key].get('log_level', fallback='INFO')
 
         return result

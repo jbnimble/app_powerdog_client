@@ -7,6 +7,11 @@ Client to interface with `Watchdog` devices via Bluetooth Low Energy (BLE)
 
 The `Watchdog` devices come in 30Amp and 50Amp configurations. A 30Amp device has LINE1 data, and a 50Amp device has LINE1/LINE2 data.
 
+## BLE Connection Troubleshooting
+
+- In testing the `Watchdog` device only allows a single client connection at a time
+- The app may not properly disconnect from BLE if shutdown, logic has been aded to attempt a native disconnect
+
 ## Local Development
 
 - Git clone repository
@@ -21,17 +26,3 @@ source .venv/bin/activate
 # Run app
 ./src/powerdog/client.py --config-file=data/config.ini
 ```
-
-## Current Plans/Ideas
-
-- HTTP client interface
-- add "RELAY ON" capability
-- add "RESET" capability
-- add `line1_topic_prefix` and `line2_topic_prefix` config
-- add bluetooth adapter name to config, in case multiple BT adapters on system
-- change logging level to `key = level` so log levels can be modified per logger
-- fix `pylock.toml` to have the correct dependencies, move away from `requirements.txt`
-- make it stable over long time periods
-- pip installable package
-- Home Assistant native plugin
-- switch to https://github.com/empicano/aiomqtt

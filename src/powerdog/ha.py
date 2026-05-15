@@ -52,6 +52,13 @@ class MqttDiscovery:
         self.device_name = device_name
         self.device_address = device_address
         self.gatt_data = gatt_data
+        # defaults due to failure on input data
+        if not self.device_name:
+            self.device_name = 'PMX Unknown'
+        if not self.device_address:
+            self.device_address = 'aa:bb:cc:dd:ee:ff'
+        if not self.gatt_data:
+            self.gatt_data = []
 
     def get_payload(self) -> DiscoveryPayload:
         result = DiscoveryPayload()
@@ -150,7 +157,7 @@ class MqttDiscovery:
             },
         }
 
-        if PowerdogUtil.get_model_type(name=self.device_name) == PowerdogModelType.DOUBLE:
+        if PowerdogUtil.get_model_type(name=self.device_name) != PowerdogModelType.SINGLE:
             line2_result = {
                 'powerdog_line2_voltage': {
                     'unique_id': 'powerdog_line2_voltage',
