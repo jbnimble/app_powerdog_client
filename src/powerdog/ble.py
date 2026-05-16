@@ -83,7 +83,7 @@ class BluetoothEventClient:
     def is_stopped(self) -> bool:
         return (not self.context and self.context_keep_alive.is_set()) or (self.context and not self.context.is_connected)
 
-    def find_service(self, service_uuid) -> None:
+    def configure_notify_service(self, service_uuid) -> None:
         if self.is_connected() and not self.notify_specifier:
             for entry in self.context.services.characteristics.values():
                 if entry.uuid == service_uuid:
@@ -96,37 +96,29 @@ class BluetoothEventClient:
         if self.notify_activated.is_set():
             self.logger.info('Skip start_notify, already activated')
         elif self.is_connected() and self.notify_specifier:
-            task = self.create_event_cb(self.context.start_notify(char_specifier=self.notify_specifier, callback=self.on_notify)) # TODO adapter args
-            task.add_done_callback(self.on_task_notify_started)
+            def task_callback(task: Task) -> None:
+                task_error = task.exception()
+                if task_error:
+                    self.on_event(EventData(BluetoothEvent.BLE_NOTIFY_FAIL_START, task_error))
+                else:
+                    self.notify_activated.set()
+                    self.on_event(EventData(BluetoothEvent.BLE_NOTIFY_STARTED))
+            task = self.create_event_cb(self.context.start_notify(char_specifier=self.notify_specifier, callback=self.on_notify))
+            task.add_done_callback(task_callback)
         else:
             self.logger.warning(f'Failed to start_notify connected={is_connected} char_specifier={self.notify_specifier}')
 
-    def stop_notify(self) -> None:
+    def stop_notify(self) -> Task | None:
+        task: Task = None
         if self.context and self.context.is_connected and self.notify_specifier:
             task = self.create_event_cb(self.context.stop_notify(self.notify_specifier))
-            task.add_done_callback(self.on_task_notify_stopped)
-
-    def on_task_notify_started(self, task: Task) -> None:
-        task_error = task.exception()
-        if task_error:
-            self.on_event(EventData(BluetoothEvent.BLE_NOTIFY_FAIL_START, task_error))
-        else:
-            self.notify_activated.set()
-            self.on_event(EventData(BluetoothEvent.BLE_NOTIFY_STARTED))
-
-    def on_task_notify_stopped(self, task: Task) -> None:
-        task_error = task.exception()
-        if task_error:
-            self.on_event(EventData(BluetoothEvent.BLE_NOTIFY_FAIL_STOP, task_error))
-        else:
-            self.notify_activated.clear()
-            self.on_event(EventData(BluetoothEvent.BLE_NOTIFY_STOPPED))
+        return task
 
     def on_event(self, event_data: EventData) -> None:
         if self.on_event_cb:
             self.on_event_cb(event_data)
         else:
-            self.logger.info(f'Event noop {event_data}')
+            self.logger.warning(f'Event noop {event_data}')
 
     async def get_meta_data(self) -> None:
         def fix_data(value: str) -> str:
@@ -199,7 +191,6 @@ class BluetoothEventScanner:
     BLE device scanner with EventData callback and Event enum
 
     TODO allow special args to BleakScanner (service_uuids, scanning_mode, bluez, cb, backend, kwargs)
-    TODO handle exceptions by sending events
     """
     def __init__(self, on_event_cb: Callable[[EventData], None] = None, allow_duplicates: bool = True):
         self.logger: Logger = logging.getLogger(self.__class__.__name__)
@@ -235,7 +226,7 @@ class BluetoothEventScanner:
             await self.context_keep_alive.wait()
         self.on_event(EventData(BluetoothEvent.BLE_SCANNER_STOPPED))
         self.context = None
-        self.logger.info('Stopped')
+        self.logger.debug('Stopped')
 
     def stop_scanner(self) -> None:
         self.context_keep_alive.set()

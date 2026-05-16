@@ -136,5 +136,22 @@ class BluetoothDeviceMeta:
     details: dict = None
     service: [DeviceMetaService] = None
 
-    def __str__(self) -> str:
-        return f'{self.__dict__}'
+    def find_char_data_by_description(self, description: str = None, default: str = None) -> str:
+        result = default
+        if description and self.service and len(self.service) > 0:
+            for serv in self.service:
+                if serv.characteristic and len(serv.characteristic) > 0:
+                    for char in serv.characteristic:
+                        if char.description == description:
+                            return char.asc_data
+        return result
+
+    def find_char_uuid_by_property(self, prop_value: str = None) -> str:
+        result = None
+        if prop_value and self.service and len(self.service) > 0:
+            for serv in self.service:
+                if serv.characteristic and len(serv.characteristic) > 0:
+                    for char in serv.characteristic:
+                        if char.properties and prop_value in char.properties:
+                            return char.uuid
+        return result

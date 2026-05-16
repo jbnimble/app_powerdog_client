@@ -14,7 +14,7 @@ from bleak import BLEDevice
 
 from powerdog.ble import BluetoothEvent, BluetoothEventClient, BluetoothEventScanner, BluetoothNative
 from powerdog.config import PowerdogConfig, BrokerConfig, ClientConfig, Configuration
-from powerdog.data import PowerdogData, GattData, PowerdogModelType, BluetoothDeviceMeta
+from powerdog.data import PowerdogData, GattData, PowerdogModelType, BluetoothDeviceMeta, DiscoveryPayload
 from powerdog.ha import MqttDiscovery
 from powerdog.mq import BrokerEventClient, BrokerMessage, BrokerEvent
 from powerdog.event import EventData, EventQueue
@@ -36,10 +36,12 @@ class AppData:
         self.pd_config: PowerdogConfig = pd_config
         self.br_config: BrokerConfig = br_config
         self.cl_config: ClientConfig = cl_config
-        self.mqtt_discovery: MqttDiscovery = None
+        self.ble_device_meta: BluetoothDeviceMeta = None
+        self.ble_notify_uuid: str = None
+        self.discovery_payload: DiscoveryPayload = None
         self.prev_data: PowerdogData = None
-        self.discovery_topic: str = None
-        self.gatt_data: [GattData] = None
+        self.powerdog_discovery_topic: str = 'homeassistant/device/powerdog/config'
+        self.powerdog_status_topic: str = 'powerdog/status'
         self.ble_device: BLEDevice = None
 
 class AppEvent(StrEnum):
@@ -61,8 +63,9 @@ class App:
         self.broker_start()
         self.create_task(self.do_native_disconnect())
 
-    def app_stop(self) -> None:
-        self.logger.info('App > stopping')
+    async def app_stop(self) -> None:
+        # TODO determine way to publish status=offline message, but on CancelledError the BrokerEventClient automatically disconnects
+        self.logger.debug('App > stopping')
         self.service.ble_scanner.stop_scanner()
         if self.service.ble_client:
             self.service.ble_client.stop_client()
@@ -86,46 +89,41 @@ class App:
             await BluetoothNative().disconnect(self.data.pd_config.address)
 
     def on_event_data(self, event_data: EventData) -> None:
-        def on_event_queue_done(task: Task, event_data: EventData) -> None:
-            """ callback for create_task """
+        def task_callback(task: Task, event_data: EventData) -> None:
             task_error = task.exception()
             if task_error:
                 self.logger.error(f'Failed on_event_data {event_data} exception={task_error}')
         try:
             task = self.task_group.create_task(self.event_queue.put(event_data))
-            task.add_done_callback(partial(on_event_queue_done, event_data=event_data))
+            task.add_done_callback(partial(task_callback, event_data=event_data))
         except Exception as e:
-            self.logger.error(f'Failed on on_event_data {event_data} failed to queue')
+            self.logger.debug(f'Failed on on_event_data {event_data} failed to queue exception={e}')
 
     def create_task(self, coro):
         return self.task_group.create_task(coro)
 
     def ble_scanner_start(self) -> None:
-        self.logger.info('BLE scanner > start')
+        self.logger.debug('BLE scanner > start')
         self.task_group.create_task(self.service.ble_scanner.start_scanner())
-        # TODO disconnect timer
 
     def on_scanner_device(self, ble_device: BLEDevice) -> None:
-        self.logger.info(f'BLE scanner > device {ble_device}')
         if ble_device.address == self.data.pd_config.address and ble_device.name:
             self.data.ble_device = ble_device
+            self.logger.info(f'BLE scanner > matching {ble_device}')
             self.ble_scanner_stop()
-        else:
-            self.detect_powerdog_device(ble_device)
-
-    def ble_scanner_stop(self) -> None:
-        self.logger.info('BLE scanner > stop')
-        self.service.ble_scanner.stop_scanner()
-
-    def detect_powerdog_device(self, ble_device: BLEDevice) -> None:
-        """ config address not provided, then attempt to detect Powerdog device """
-        if not self.data.ble_device and not self.data.pd_config.address and ble_device.address and ble_device.name and PowerdogUtil.get_model_type(ble_device.name) != PowerdogModelType.UNKNOWN:
+        elif not self.data.ble_device and not self.data.pd_config.address and ble_device.address and ble_device.name and PowerdogUtil.get_model_type(ble_device.name) != PowerdogModelType.UNKNOWN:
             self.logger.info(f'BLE scanner > detected {ble_device}')
             self.data.ble_device = ble_device
             self.ble_scanner_stop()
+        else:
+            self.logger.info(f'BLE scanner > device {ble_device}')
+
+    def ble_scanner_stop(self) -> None:
+        self.logger.debug('BLE scanner > stop')
+        self.service.ble_scanner.stop_scanner()
 
     def ble_client_start(self) -> None:
-        self.logger.info(f'BLE client > start {self.data.ble_device}')
+        self.logger.debug(f'BLE client > start {self.data.ble_device}')
         self.service.ble_client = BluetoothEventClient(device=self.data.ble_device, create_event_cb=self.create_task, on_event_cb=self.on_event_data)
         self.task_group.create_task(self.service.ble_client.start_client())
 
@@ -134,45 +132,58 @@ class App:
 
     def on_ble_client_metadata(self, meta_data: BluetoothDeviceMeta) -> None:
         self.logger.info('BLE client > metadata')
+        self.data.ble_device_meta = meta_data
+        self.data.ble_notify_uuid = self.data.ble_device_meta.find_char_uuid_by_property('notify')
+        self.service.ble_client.configure_notify_service(self.data.ble_notify_uuid)
+
+        self.write_meta_to_file()
+
+        # TODO is this where we want to trigger discovery?
+        self.publish_discovery_payload()
+
+    def write_meta_to_file(self):
         if self.data.pd_config.device_meta_path:
-            # self.logger.info(f'meta_data=\n{meta_data}')
             try:
                 with open(self.data.pd_config.device_meta_path, mode='w') as file:
-                    json.dump(meta_data, file, indent=4, default=PowerdogUtil.json_serializer)
+                    json.dump(self.data.ble_device_meta, file, indent=4, default=PowerdogUtil.json_serializer)
             except Exception as e:
                 self.logger.error(f'Failed to write file due to: {e}')
-        # TODO is this where we want to trigger discovery?
-        self.task_group.create_task(self.publish_discovery_payload())
 
     def ble_client_stop(self) -> None:
-        self.logger.info('BLE client > stop')
+        self.logger.debug('BLE client > stop')
         self.service.ble_client.stop_client()
 
-    def find_ble_service(self, service_uuid: str) -> None:
-        self.logger.info(f'BLE service > find {service_uuid}')
-        self.service.ble_client.find_service(service_uuid)
-
     def ble_client_notify_start(self) -> None:
-        self.logger.info('BLE notify service > start')
+        self.logger.debug('BLE notify service > start')
         self.service.ble_client.start_notify()
 
     def ble_client_notify_stop(self) -> None:
-        self.logger.info('BLE notify service > stop')
-        self.service.ble_client.stop_notify()
+        self.logger.debug('BLE notify service > stop')
+        task: Task = self.service.ble_client.stop_notify()
+        if task:
+            def task_callback(task: Task) -> None:
+                task_error = task.exception()
+                if task_error:
+                    self.on_event_data(EventData(BluetoothEvent.BLE_NOTIFY_FAIL_STOP, task_error))
+                else:
+                    self.service.ble_client.notify_activated.clear()
+                    self.on_event_data(EventData(BluetoothEvent.BLE_NOTIFY_STOPPED))
+            task.add_done_callback(task_callback)
 
     def broker_start(self) -> None:
         if self.data.br_config.broker_host:
-            self.logger.info(f'Broker > configuring {self.data.br_config.broker_host}:{self.data.br_config.broker_port}')
+            self.logger.debug(f'Broker > configuring {self.data.br_config.broker_host}:{self.data.br_config.broker_port}')
             self.service.mq_client = BrokerEventClient(config=self.data.br_config, on_event_cb=self.on_event_data)
             self.task_group.create_task(self.service.mq_client.start_client())
-        else:
-            self.logger.info('Broker > configuring (noop)')
 
     def broker_stop(self) -> None:
         self.logger.info('Broker > stop')
         self.service.mq_client.stop_client()
 
     def subscribe_config_topics(self) -> None:
+        self.task_group.create_task(self.service.mq_client.subscribe(topic=self.data.powerdog_discovery_topic))
+        self.task_group.create_task(self.service.mq_client.subscribe(topic=self.data.powerdog_status_topic))
+
         for topic in self.data.br_config.subscribe_topics:
             self.logger.info(f'Broker > subscribe {topic}')
             self.task_group.create_task(self.service.mq_client.subscribe(topic=topic))
@@ -192,59 +203,38 @@ class App:
         broker_messages = PowerdogUtil.get_broker_messages(data)
         self.task_group.create_task(self.service.mq_client.publish(broker_messages))
 
-    async def publish_discovery_payload(self) -> None:
+    def publish_discovery_payload(self) -> None:
         if self.service.mq_client:
-            self.data.mqtt_discovery = MqttDiscovery(device_name=self.data.ble_device.name, device_address=self.data.ble_device.address, gatt_data=self.data.gatt_data)
-            discovery_payload = self.data.mqtt_discovery.get_payload()
-            payload = discovery_payload.to_dict()
-            model = payload['device']['model'] if payload and payload['device'] and payload['device']['model'] else None
-            if payload and model:
-                self.data.discovery_topic = f'homeassistant/device/powerdog/{model}/config'
-                # TODO would like to subscribe to this topic much earlier in the process
-                await self.service.mq_client.subscribe(topic=self.data.discovery_topic)
-                self.logger.info(f'Broker discovery > publish {self.data.discovery_topic}')
-                await self.service.mq_client.publish([BrokerMessage(self.data.discovery_topic, json.dumps(payload))])
-            else:
-                self.logger.warning(f'Payload missing {payload}')
-            # publish powerdog/status, removes "Unavailable" status from sensors in Home Assistant
-            await self.service.mq_client.publish([BrokerMessage('powerdog/status', 'online')])
+            self.data.discovery_payload: DiscoveryPayload = MqttDiscovery.get_discovery_payload(self.data.ble_device_meta)
+            self.logger.info(f'Broker discovery > publish {self.data.powerdog_discovery_topic}')
+            task: Task = self.create_task(self.service.mq_client.publish([BrokerMessage(self.data.powerdog_discovery_topic, json.dumps(self.data.discovery_payload.to_dict()))]))
+            def task_callback(task: Task) -> None:
+                task_error = task.exception()
+                if task_error:
+                    self.logger.error(f'Broker discovery > publish failed {task_error}')
+            task.add_done_callback(task_callback)
         else:
             self.logger.info('Broker discovery > publish (noop)')
 
     def on_subscribed_message(self, message) -> None:
-        if message.topic == 'homeassistant/status' and message.payload.decode('utf-8') == 'online':
-            self.logger.info(f'Topic {message.topic} {message.payload}')
+        if message.topic == self.data.powerdog_status_topic and message.payload.decode('utf-8') == 'online':
+            self.logger.info(f'Published {message.topic}={str(message.payload, encoding='utf-8')}')
             if not self.service.ble_client.is_notify_activated():
                 self.ble_client_notify_start()
-            else:
-                self.logger.info('BLE notify service > started (noop)')
-        elif message.topic == 'homeassistant/status' and message.payload.decode('utf-8') == 'offline':
-            self.logger.info(f'Topic {message.topic} {message.payload}')
+        elif message.topic == self.data.powerdog_status_topic and message.payload.decode('utf-8') == 'offline':
+            self.logger.info(f'Published {message.topic}={str(message.payload, encoding='utf-8')}')
             self.ble_client_notify_stop()
-        elif message.topic == self.data.discovery_topic:
+        elif message.topic == self.data.powerdog_discovery_topic:
             self.on_event_data(EventData(BrokerEvent.BROKER_CLIENT_DISCOVERY_SENT, message))
-        elif message.topic.startswith('homeassistant/device/powerdog/'):
-            self.logger.info(f'Topic {message.topic} > config message sent')
-        elif message.topic == 'powerdog/status':
-            self.logger.info(f'Topic {message.topic} {message.payload}')
         else:
             self.logger.info(f'Message from {message.topic}={message.payload}')
 
-    # async def test_stuff(self) -> None:
-    #     await asyncio.sleep(10)
-    #     if self.service.ble_client.is_notify_activated():
-    #         self.ble_client_notify_stop()
-    #         await asyncio.sleep(5)
-    #     if self.service.ble_client.is_client_activated():
-    #         self.ble_client_stop()
-    #     await asyncio.sleep(4)
-    #     raise TerminateTaskGroup()
-
-    # async def test_mq(self) -> None:
-    #     await asyncio.sleep(7)
-    #     self.broker_stop()
-    #     await asyncio.sleep(3)
-    #     raise TerminateTaskGroup()
+    def on_discovery_published(self) -> None:
+        # publish powerdog/status, removes "Unavailable" status from sensors in Home Assistant
+        async def publish_powerdog_online(topic: str) -> None:
+            await asyncio.sleep(2.0)
+            await self.service.mq_client.publish([BrokerMessage(topic, 'online')])
+        self.create_task(publish_powerdog_online(self.data.powerdog_status_topic))
 
     async def main(self) -> None:
         self.on_event_data(EventData(AppEvent.APP_START_SERVICES))
@@ -256,8 +246,8 @@ class App:
             if event_data.name == AppEvent.APP_START_SERVICES:
                 self.app_start()
             # BLE scanner events
-            elif event_data.name == BluetoothEvent.BLE_SCANNER_STARTED:
-                self.logger.info('BLE scanner > started')
+            # elif event_data.name == BluetoothEvent.BLE_SCANNER_STARTED:
+            #     self.logger.info('BLE scanner > started')
             elif event_data.name == BluetoothEvent.BLE_SCANNER_DEVICE:
                 self.on_scanner_device(event_data.data['device'])
             elif event_data.name == BluetoothEvent.BLE_SCANNER_STOPPED:
@@ -268,32 +258,31 @@ class App:
             elif event_data.name == BluetoothEvent.BLE_CLIENT_STARTED:
                 self.logger.info(f'BLE client > started {event_data.data}')
                 self.on_ble_client_started()
-            elif event_data.name == BluetoothEvent.BLE_CLIENT_STOPPED:
-                self.logger.info('BLE client > stopped')
-            elif event_data.name == BluetoothEvent.BLE_SERVICE_FOUND:
-                self.logger.info(f'BLE notify service > found {event_data.data}')
-                self.ble_client_notify_start()
-            elif event_data.name == BluetoothEvent.BLE_NOTIFY_STARTED:
-                self.logger.info('BLE notify service > started')
+            # elif event_data.name == BluetoothEvent.BLE_CLIENT_STOPPED:
+            #     self.logger.info('BLE client > stopped')
+            # elif event_data.name == BluetoothEvent.BLE_SERVICE_FOUND:
+            #     self.logger.info(f'BLE notify service > found {event_data.data}')
+            # elif event_data.name == BluetoothEvent.BLE_NOTIFY_STARTED:
+            #     self.logger.info('BLE notify service > started')
             elif event_data.name == BluetoothEvent.BLE_NOTIFY_DATA:
                 self.logger.debug(f'Broker > notification {event_data.data}')
                 self.decode_service_data(event_data.data)
-            elif event_data.name == BluetoothEvent.BLE_NOTIFY_STOPPED:
-                self.logger.info('BLE notify service > stopped')
+            # elif event_data.name == BluetoothEvent.BLE_NOTIFY_STOPPED:
+            #     self.logger.info('BLE notify service > stopped')
             elif event_data.name == BluetoothEvent.BLE_CLIENT_META_DATA:
                 self.on_ble_client_metadata(event_data.data)
-            elif event_data.name == BluetoothEvent.BLE_CLIENT_DISCONNECTED:
-                self.logger.info('BLE client > disconnected')
+            # elif event_data.name == BluetoothEvent.BLE_CLIENT_DISCONNECTED:
+            #     self.logger.info('BLE client > disconnected')
             # Broker events
             elif event_data.name == BrokerEvent.BROKER_CLIENT_CONNECTED:
                 self.logger.info('Broker > connected')
                 self.subscribe_config_topics()
-            elif event_data.name == BrokerEvent.BROKER_CLIENT_STARTING:
-                self.logger.info('Broker > starting')
-            elif event_data.name == BrokerEvent.BROKER_CLIENT_CONFIGURED:
-                self.logger.info('Broker > configured')
-            elif event_data.name == BrokerEvent.BROKER_CLIENT_SUBSCRIBED:
-                self.logger.info(f'Broker > subscribed {event_data.data}')
+            # elif event_data.name == BrokerEvent.BROKER_CLIENT_STARTING:
+            #     self.logger.debug('Broker > starting')
+            # elif event_data.name == BrokerEvent.BROKER_CLIENT_CONFIGURED:
+            #     self.logger.info('Broker > configured')
+            # elif event_data.name == BrokerEvent.BROKER_CLIENT_SUBSCRIBED:
+            #     self.logger.info(f'Broker > subscribed {event_data.data}')
             elif event_data.name == BrokerEvent.BROKER_CLIENT_DECODED_DATA:
                 self.logger.debug(f'Broker > decoded {event_data.data}')
                 self.publish_broker_data(event_data.data)
@@ -302,11 +291,11 @@ class App:
                 self.on_subscribed_message(event_data.data)
             elif event_data.name == BrokerEvent.BROKER_CLIENT_DISCOVERY_SENT:
                 self.logger.info('Broker discovery > published')
-                self.find_ble_service(self.data.pd_config.service)
-            elif event_data.name == BrokerEvent.BROKER_CLIENT_STOPPED:
-                self.logger.info('Broker > stopped')
+                self.on_discovery_published()
+            # elif event_data.name == BrokerEvent.BROKER_CLIENT_STOPPED:
+            #     self.logger.info('Broker > stopped')
             else:
-                self.logger.info(f'{event_data}')
+                self.logger.debug(f'{event_data}')
 
     async def execute(self) -> None:
         try:
@@ -315,7 +304,7 @@ class App:
                 self.task_group.create_task(coro=self.main())
         except asyncio.CancelledError:
             # Attempt a clean shutdown, captures Ctrl-C KeyboardInterrupt
-            self.app_stop()
+            await self.app_stop()
             time_limit = 10.0
             while not self.is_app_stopped():
                 time_wait = 0.1
