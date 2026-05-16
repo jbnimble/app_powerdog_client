@@ -1,6 +1,8 @@
 from dataclasses import dataclass
 from enum import Enum, auto
 
+from bleak import BleakGATTCharacteristic
+
 @dataclass
 class PowerdogConfig:
     address: str = None
@@ -99,6 +101,11 @@ class GattData:
     gatt_type: GattType = None
 
 @dataclass
+class BLENotification:
+    sender: BleakGATTCharacteristic = None
+    data: str = None
+
+@dataclass
 class DiscoveryPayload:
     device = None
     origin = None
@@ -146,7 +153,7 @@ class BluetoothDeviceMeta:
                             return char.asc_data
         return result
 
-    def find_char_uuid_by_property(self, prop_value: str = None) -> str:
+    def find_char_uuid_by_property(self, prop_value: str = None) -> str | None:
         result = None
         if prop_value and self.service and len(self.service) > 0:
             for serv in self.service:

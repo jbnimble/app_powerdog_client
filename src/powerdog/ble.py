@@ -4,29 +4,34 @@ from asyncio.subprocess import Process
 from enum import StrEnum
 import logging
 import platform
-from typing import Callable
+from typing import Callable, Union
+from uuid import UUID
 
 from bleak import BleakClient, BleakScanner, BLEDevice, AdvertisementData, BleakGATTCharacteristic
 from bleak.backends.service import BleakGATTService
 from bleak.exc import BleakDeviceNotFoundError, BleakError, BleakGATTProtocolError
 
 from powerdog.event import EventData
-from powerdog.data import GattData, GattType, BluetoothDeviceMeta, DeviceMetaService, DeviceMetaChar, DeviceMetaDesc
+from powerdog.data import GattData, GattType, BluetoothDeviceMeta, DeviceMetaService, DeviceMetaChar, DeviceMetaDesc, BLENotification
 from powerdog.util import PowerdogUtil
 
 class BluetoothEvent(StrEnum):
     BLE_SCANNER_STARTED =     'ble_scanner_started'
     BLE_SCANNER_DEVICE =      'ble_scanner_device'
+    BLE_SCANNER_FAILED =      'ble_scanner_failed'
     BLE_SCANNER_STOPPED =     'ble_scanner_stopped'
     BLE_CLIENT_STARTED =      'ble_client_started'
+    BLE_CLIENT_FAILURE =      'ble_client_failure'
     BLE_CLIENT_STOPPED =      'ble_client_stopped'
     BLE_CLIENT_META_DATA =    'ble_client_meta_data'
+    BLE_CLIENT_META_FAILURE = 'ble_client_meta_failure'
     BLE_CLIENT_DISCONNECTED = 'ble_client_disconnected'
     BLE_NOTIFY_STARTED =      'ble_notify_started'
     BLE_NOTIFY_FAIL_START =   'ble_notify_fail_start'
     BLE_NOTIFY_FAIL_STOP =    'ble_notify_fail_stop'
     BLE_NOTIFY_STOPPED =      'ble_notify_stopped'
-    BLE_SERVICE_FOUND =       'ble_service_found'
+    BLE_NOTIFY_NOT_FOUND =    'ble_notify_not_found'
+    BLE_NOTIFY_FOUND =        'ble_notify_found'
     BLE_NOTIFY_DATA =         'ble_notify_data'
 
 # class BluetoothEventAdapter:
@@ -45,82 +50,84 @@ class BluetoothEventClient:
     """
     BLE device client with EventData callback and Event enum
     """
-    def __init__(self, device: BLEDevice | str, create_event_cb, on_event_cb: Callable[[EventData], None] = None):
+    def __init__(self, on_event_cb: Callable[[EventData], None] = None):
         self.logger: Logger = logging.getLogger(self.__class__.__name__)
-        self.device = device
-        self.create_event_cb = create_event_cb
-        self.on_event_cb = on_event_cb
-        self.notify_specifier: BleakGATTCharacteristic = None
-        self.notify_activated = asyncio.Event()
-        self.context_keep_alive = asyncio.Event()
-        self.context_keep_alive.set()
-        self.context: BleakClient = None
+        self._device = None
+        self._on_event_cb = on_event_cb
+        self._notify_specifier_set = set()
+        self._context_keep_alive = asyncio.Event()
+        self._context_keep_alive.set()
+        self._context: BleakClient = None
 
-    async def on_notify(self, sender: BleakGATTCharacteristic, data: bytearray) -> None:
+    def _on_event(self, event_data: EventData) -> None:
+        if self._on_event_cb:
+            self._on_event_cb(event_data)
+
+    async def _on_notify(self, sender: BleakGATTCharacteristic, data: bytearray) -> None:
         """ Callback for start_notify characteristic data """
-        if sender == self.notify_specifier:
-            self.on_event(EventData(BluetoothEvent.BLE_NOTIFY_DATA, data.hex()))
-        else:
-            self.logger.warning(f'on_notify unknown characteristic={sender} data={data.hex()}')
+        self._on_event(EventData(BluetoothEvent.BLE_NOTIFY_DATA, BLENotification(sender=sender, data=data.hex())))
 
-    def on_disconnected(self, client):
+    def _on_disconnected(self, client):
         """ Callback when BleakClient disconnects, cannot be async """
-        self.on_event(EventData(BluetoothEvent.BLE_CLIENT_DISCONNECTED))
+        self._on_event(EventData(BluetoothEvent.BLE_CLIENT_DISCONNECTED))
 
-    async def start_client(self):
-        self.context_keep_alive.clear()
-        async with BleakClient(address_or_ble_device=self.device, disconnected_callback=self.on_disconnected) as context:
-            self.context = context
-            self.on_event(EventData(BluetoothEvent.BLE_CLIENT_STARTED, context))
-            await self.context_keep_alive.wait()
-        self.on_event(EventData(BluetoothEvent.BLE_CLIENT_STOPPED))
-        self.context = None
+    async def start_client(self, device: BLEDevice | str):
+        """ Connect to provided BLE device """
+        self._device = device
+        self._context_keep_alive.clear()
+        try:
+            async with BleakClient(address_or_ble_device=self._device, disconnected_callback=self._on_disconnected) as context:
+                self._context = context
+                self._on_event(EventData(BluetoothEvent.BLE_CLIENT_STARTED, context))
+                await self._context_keep_alive.wait()
+            self._on_event(EventData(BluetoothEvent.BLE_CLIENT_STOPPED))
+        except Exception as e:
+            self.logger.error(f'Client failure {e}')
+            self._on_event(EventData(BluetoothEvent.BLE_CLIENT_FAILURE))
+        self._context = None
+        self._device = None
         self.logger.info('Stopped')
 
     def stop_client(self) -> None:
-        self.context_keep_alive.set()
+        """ Trigger client stop """
+        self._context_keep_alive.set()
 
-    def is_stopped(self) -> bool:
-        return (not self.context and self.context_keep_alive.is_set()) or (self.context and not self.context.is_connected)
+    def is_notify(self, char_specifier: Union[BleakGATTCharacteristic, int, str, UUID]) -> bool:
+        """" Status if char_specifier is an active notifier """
+        return char_specifier in self._notify_specifier_set
 
-    def configure_notify_service(self, service_uuid) -> None:
-        if self.is_connected() and not self.notify_specifier:
-            for entry in self.context.services.characteristics.values():
-                if entry.uuid == service_uuid:
-                    self.notify_specifier = entry
-                    break
-        if self.notify_specifier:
-            self.on_event(EventData(BluetoothEvent.BLE_SERVICE_FOUND, self.notify_specifier))
+    def is_active(self) -> bool:
+        """ Status if client is active and connected to BLE device """
+        return self._context and not self._context_keep_alive.is_set() and self._context.is_connected
 
-    def start_notify(self) -> None:
-        if self.notify_activated.is_set():
-            self.logger.info('Skip start_notify, already activated')
-        elif self.is_connected() and self.notify_specifier:
-            def task_callback(task: Task) -> None:
-                task_error = task.exception()
-                if task_error:
-                    self.on_event(EventData(BluetoothEvent.BLE_NOTIFY_FAIL_START, task_error))
-                else:
-                    self.notify_activated.set()
-                    self.on_event(EventData(BluetoothEvent.BLE_NOTIFY_STARTED))
-            task = self.create_event_cb(self.context.start_notify(char_specifier=self.notify_specifier, callback=self.on_notify))
-            task.add_done_callback(task_callback)
-        else:
-            self.logger.warning(f'Failed to start_notify connected={is_connected} char_specifier={self.notify_specifier}')
+    async def start_notify(self, char_specifier: Union[BleakGATTCharacteristic, int, str, UUID]) -> None:
+        """ Start notifications for char_specifier """
+        try:
+            if not self.is_active():
+                raise Exception('Client not active')
+            await self._context.start_notify(char_specifier=char_specifier, callback=self._on_notify)
+            self._notify_specifier_set.add(char_specifier)
+        except Exception as e:
+            self.logger.error(f'Start notify failure {char_specifier} caused {e}')
+            self._on_event(EventData(BluetoothEvent.BLE_NOTIFY_FAIL_START))
 
-    def stop_notify(self) -> Task | None:
-        task: Task = None
-        if self.context and self.context.is_connected and self.notify_specifier:
-            task = self.create_event_cb(self.context.stop_notify(self.notify_specifier))
-        return task
-
-    def on_event(self, event_data: EventData) -> None:
-        if self.on_event_cb:
-            self.on_event_cb(event_data)
-        else:
-            self.logger.warning(f'Event noop {event_data}')
+    async def stop_notify(self, char_specifier: Union[BleakGATTCharacteristic, int, str, UUID]) -> None:
+        """ Stop notifications for char_specifier """
+        try:
+            if not self.is_active():
+                raise Exception('Client not active')
+            await self._context.stop_notify(char_specifier=char_specifier)
+            self._notify_specifier_set.remove(char_specifier)
+        except Exception as e:
+            self.logger.error(f'Stop notify failure {char_specifier} caused {e}')
+            self._on_event(EventData(BluetoothEvent.BLE_NOTIFY_FAIL_STOP))
 
     async def get_meta_data(self) -> None:
+        """ Send event with BluetoothDeviceMeta or failure event """
+        if not self._context or not self._device:
+            self._on_event(EventData(BluetoothEvent.BLE_CLIENT_META_FAILURE))
+            return
+
         def fix_data(value: str) -> str:
             """ Remove unicode null's and if contains newline characters then ensure only alphanumeric """
             result = value.replace('\u0000', '')
@@ -129,12 +136,12 @@ class BluetoothEventClient:
             return result
 
         result = BluetoothDeviceMeta()
-        result.name = self.device.name
-        result.address = self.device.address
-        result.details = self.device.details
+        result.name = self._device.name
+        result.address = self._device.address
+        result.details = self._device.details
         service_list = []
 
-        for serv in self.context.services.services.values():
+        for serv in self._context.services.services.values():
             meta_service = DeviceMetaService(handle=serv.handle, uuid=serv.uuid, description=serv.description)
             char_list = []
             for char in serv.characteristics:
@@ -142,7 +149,7 @@ class BluetoothEventClient:
                 if len(char.properties) > 0:
                     detail_char.properties = char.properties
                 try:
-                    data: bytearray = await self.context.read_gatt_char(char_specifier=char)
+                    data: bytearray = await self._context.read_gatt_char(char_specifier=char)
                     data_hex = data.hex()
                     data_ascii = fix_data(PowerdogUtil.bytearray_to_ascii(data))
                     if len(data_hex) > 0:
@@ -156,7 +163,7 @@ class BluetoothEventClient:
                 for desc in char.descriptors:
                     detail_desc = DeviceMetaDesc(handle=desc.handle, uuid=desc.handle, description=desc.description)
                     try:
-                        data: bytearray = await self.context.read_gatt_descriptor(desc_specifier=desc, use_cached=False)
+                        data: bytearray = await self._context.read_gatt_descriptor(desc_specifier=desc, use_cached=False)
                         data_hex = data.hex()
                         data_ascii = fix_data(PowerdogUtil.bytearray_to_ascii(data))
                         if len(data_hex) > 0:
@@ -175,16 +182,7 @@ class BluetoothEventClient:
             if len(service_list) > 0:
                 result.service = service_list
             service_list.append(meta_service)
-        self.on_event(EventData(BluetoothEvent.BLE_CLIENT_META_DATA, result))
-
-    def is_connected(self) -> bool:
-        return self.context.is_connected if self.context else False
-
-    def is_notify_activated(self) -> bool:
-        return self.notify_activated.is_set()
-
-    def is_client_activated(self) -> bool:
-        return not self.context_keep_alive.is_set() and self.context
+        self._on_event(EventData(BluetoothEvent.BLE_CLIENT_META_DATA, result))
 
 class BluetoothEventScanner:
     """
@@ -196,46 +194,45 @@ class BluetoothEventScanner:
         self.logger: Logger = logging.getLogger(self.__class__.__name__)
         self.on_event_cb = on_event_cb
         self.allow_duplicates = allow_duplicates
-        self.context_keep_alive = asyncio.Event()
-        self.context_keep_alive.set()
-        self.context: BleakScanner = None
+        self._context_keep_alive = asyncio.Event()
+        self._context_keep_alive.set()
+        self._context: BleakScanner = None
         self.device_lock = asyncio.Lock()
         self.device_set = set()
 
-    def on_event(self, event_data: EventData) -> None:
+    def _on_event(self, event_data: EventData) -> None:
         if self.on_event_cb:
             self.on_event_cb(event_data)
-        else:
-            self.logger.info(f'Event noop {event_data}')
 
-    async def on_scanner_detection(self, device: BLEDevice, data: AdvertisementData):
+    async def _on_scanner_detection(self, device: BLEDevice, data: AdvertisementData):
         if self.allow_duplicates:
-            self.on_event(EventData(BluetoothEvent.BLE_SCANNER_DEVICE, {'device': device, 'data': data}))
+            self._on_event(EventData(BluetoothEvent.BLE_SCANNER_DEVICE, {'device': device, 'data': data}))
         else:
             async with self.device_lock:
                 if device not in self.device_set:
                     self.device_set.add(device)
-                    self.on_event(EventData(BluetoothEvent.BLE_SCANNER_DEVICE, {'device': device, 'data': data}))
+                    self._on_event(EventData(BluetoothEvent.BLE_SCANNER_DEVICE, {'device': device, 'data': data}))
 
     async def start_scanner(self):
         self.device_set.clear()
-        self.context_keep_alive.clear()
-        async with BleakScanner(detection_callback=self.on_scanner_detection) as context:
-            self.context = context
-            self.on_event(EventData(BluetoothEvent.BLE_SCANNER_STARTED, context))
-            await self.context_keep_alive.wait()
-        self.on_event(EventData(BluetoothEvent.BLE_SCANNER_STOPPED))
-        self.context = None
-        self.logger.debug('Stopped')
+        self._context_keep_alive.clear()
+        try:
+            async with BleakScanner(detection_callback=self._on_scanner_detection) as context:
+                self._context = context
+                self._on_event(EventData(BluetoothEvent.BLE_SCANNER_STARTED, context))
+                await self._context_keep_alive.wait()
+            self._on_event(EventData(BluetoothEvent.BLE_SCANNER_STOPPED))
+        except Exception as e:
+            self.logger.error(f'Scanner failure {e}')
+            self._on_event(EventData(BluetoothEvent.BLE_SCANNER_FAILED))
+        self._context = None
+        self.logger.info('Stopped')
 
     def stop_scanner(self) -> None:
-        self.context_keep_alive.set()
+        self._context_keep_alive.set()
 
-    def is_stopped(self) -> bool:
-        return not self.context and self.context_keep_alive.is_set()
-
-    def is_scanner_activated(self) -> bool:
-        return not self.context_keep_alive.is_set() and self.context
+    def is_active(self) -> bool:
+        return self._context and not self._context_keep_alive.is_set()
 
 class BluetoothNative:
     def __init__(self):
