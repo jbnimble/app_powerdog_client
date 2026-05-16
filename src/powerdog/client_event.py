@@ -217,12 +217,13 @@ class App:
             self.logger.info('Broker discovery > publish (noop)')
 
     def on_subscribed_message(self, message) -> None:
+        payload = str(message.payload, encoding='utf-8')
         if message.topic == self.data.powerdog_status_topic and message.payload.decode('utf-8') == 'online':
-            self.logger.info(f'Published {message.topic}={str(message.payload, encoding='utf-8')}')
+            self.logger.info(f'Published {message.topic}={payload}')
             if not self.service.ble_client.is_notify_activated():
                 self.ble_client_notify_start()
         elif message.topic == self.data.powerdog_status_topic and message.payload.decode('utf-8') == 'offline':
-            self.logger.info(f'Published {message.topic}={str(message.payload, encoding='utf-8')}')
+            self.logger.info(f'Published {message.topic}={payload}')
             self.ble_client_notify_stop()
         elif message.topic == self.data.powerdog_discovery_topic:
             self.on_event_data(EventData(BrokerEvent.BROKER_CLIENT_DISCOVERY_SENT, message))
