@@ -18,7 +18,7 @@ from powerdog.data import PowerdogData, GattData, PowerdogModelType, BluetoothDe
 from powerdog.ha import MqttDiscovery
 from powerdog.mq import BrokerEventClient, BrokerMessage, BrokerEvent
 from powerdog.event import EventData, EventQueue
-from powerdog.pd import PowerdogDecoder, DataLimiter, PowerdogDataType
+from powerdog.pd import PowerdogDecoder, DataLimiter, PowerdogDataType, PowerdogMessageMonitor
 from powerdog.util import PowerdogUtil
 
 class TerminateTaskGroup(Exception):
@@ -30,6 +30,7 @@ class AppService:
         self.ble_client: BluetoothEventClient = None
         self.mq_client: BrokerEventClient = None
         self.data_limiter: DataLimiter = None
+        self.message_monitor: PowerdogMessageMonitor = PowerdogMessageMonitor()
 
 class AppData:
     def __init__(self, pd_config: PowerdogConfig, br_config: BrokerConfig, cl_config: ClientConfig):
@@ -189,6 +190,8 @@ class App:
             self.task_group.create_task(self.service.mq_client.subscribe(topic=topic))
 
     def decode_service_data(self, data: str) -> None:
+        self.service.message_monitor.on_message('powerdog_raw')
+
         pd_data = PowerdogDecoder.decode(raw_data=data)
 
         if pd_data.data_type == PowerdogDataType.DATA.value:
@@ -198,6 +201,7 @@ class App:
             result.data_type = pd_data.data_type # update LINE1 or LINE2 type on previous DATA line
             if self.service.data_limiter.check(result):
                 self.on_event_data(EventData(BrokerEvent.BROKER_CLIENT_DECODED_DATA, result))
+                self.service.message_monitor.on_message('powerdog_decoded')
 
     def publish_broker_data(self, data: PowerdogData) -> None:
         broker_messages = PowerdogUtil.get_broker_messages(data)
@@ -217,6 +221,7 @@ class App:
             self.logger.info('Broker discovery > publish (noop)')
 
     def on_subscribed_message(self, message) -> None:
+        self.service.message_monitor.on_message('broker_subscribed')
         payload = str(message.payload, encoding='utf-8')
         if message.topic == self.data.powerdog_status_topic and message.payload.decode('utf-8') == 'online':
             self.logger.info(f'Published {message.topic}={payload}')

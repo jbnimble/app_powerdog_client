@@ -117,6 +117,25 @@ class DataLimiter:
             result = True
         return result
 
+class PowerdogMessageMonitor:
+    def __init__(self, wait_sec: int = 300):
+        self.logger: Logger = logging.getLogger(self.__class__.__name__)
+        self.wait_sec = wait_sec
+        self.last_cleared = time.time()
+        self.message_tracker = {}
+
+    def on_message(self, message_type: str) -> None:
+        if message_type not in self.message_tracker:
+            self.logger.info(f'Tracking {message_type} messages')
+            self.message_tracker[message_type] = 1
+        else:
+            self.message_tracker[message_type] = self.message_tracker[message_type] + 1
+        if time.time() - self.wait_sec > self.last_cleared:
+            for key,val in self.message_tracker.items():
+                self.logger.info(f'{val} {key} messages sent in the last {self.wait_sec} seconds')
+                self.message_tracker[key] = 0
+            self.last_cleared = time.time()
+
 class AsyncDeviceInterrogator:
     def __init__(self, config: PowerdogConfig = None):
         self.logger: Logger = logging.getLogger(self.__class__.__name__)
