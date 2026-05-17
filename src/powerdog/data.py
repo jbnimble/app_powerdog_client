@@ -12,6 +12,8 @@ class PowerdogConfig:
     limit_wattage_range: float = 0.0
     limit_quiet_sec: float = 60.0
     device_meta_path: str = None
+    device_data_path: str = None
+    decode_data_path: str = None
 
 @dataclass
 class BrokerConfig:

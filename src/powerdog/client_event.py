@@ -143,7 +143,7 @@ class App:
                 with open(self.data.pd_config.device_meta_path, mode='w') as file:
                     json.dump(self.data.ble_device_meta, file, indent=4, default=PowerdogUtil.json_serializer)
             except Exception as e:
-                self.logger.error(f'Failed to write file due to: {e}')
+                self.logger.error(f'Failed to write {self.data.pd_config.device_meta_path} due to: {e}')
 
     def ble_client_stop(self) -> None:
         self.logger.debug('BLE client > stop')
@@ -180,7 +180,10 @@ class App:
         if notification and notification.sender and notification.sender.uuid == self.data.ble_notify_specifier and notification.data:
             self.service.message_monitor.on_message('powerdog_raw')
             data = notification.data
-            pd_data = PowerdogDecoder.decode(raw_data=data)
+            pd_data: PowerdogData = PowerdogDecoder.decode(raw_data=data)
+
+            self.write_data_to_file(self.data.pd_config.device_data_path, data)
+            self.write_data_to_file(self.data.pd_config.decode_data_path, pd_data.__dict__, to_json=True)
 
             if pd_data.data_type == PowerdogDataType.DATA.value:
                 self.data.prev_data = pd_data # save data until next LINE1 or LINE2 notification
@@ -193,9 +196,21 @@ class App:
         else:
             self.logger.warning(f'Skipped decode {notification}')
 
+    def write_data_to_file(self, file_path: str, data: str, to_json: bool = False) -> None:
+        if file_path:
+            try:
+                value = f'{json.dumps(data)}' if to_json else f'{data}'
+                with open(file_path, mode='at') as file:
+                    file.write(f'{value}\n')
+                self.logger.debug(f'Wrote to {file_path} with {value}')
+                self.service.message_monitor.on_message(file_path)
+            except Exception as e:
+                self.logger.error(f'Failed to write {file_path} due to: {e}')
+
     def publish_broker_data(self, data: PowerdogData) -> None:
-        broker_messages = PowerdogUtil.get_broker_messages(data)
-        self.task_group.create_task(self.service.mq_client.publish(broker_messages))
+        if self.service.mq_client.is_active():
+            broker_messages = PowerdogUtil.get_broker_messages(data)
+            self.task_group.create_task(self.service.mq_client.publish(broker_messages))
 
     def publish_discovery_payload(self) -> None:
         if self.service.mq_client.is_active():
@@ -270,6 +285,9 @@ class App:
             elif event.name == BluetoothEvent.BLE_NOTIFY_FOUND:
                 self.logger.info(f'BLE notify service > found')
                 self.publish_discovery_payload()
+
+                if self.data.pd_config.device_data_path or self.data.pd_config.decode_data_path:
+                    self.ble_client_notify_start()
             elif event.name == BluetoothEvent.BLE_NOTIFY_STARTED:
                 self.logger.info(f'BLE notify service > started {self.data.ble_notify_specifier}')
             elif event.name == BluetoothEvent.BLE_NOTIFY_DATA:

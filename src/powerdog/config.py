@@ -39,6 +39,8 @@ class Configuration:
             result.limit_wattage_range = self.config[section_key].getfloat('limit_wattage_range', fallback=result.limit_wattage_range)
             result.limit_quiet_sec = self.config[section_key].getfloat('limit_quiet_sec', fallback=result.limit_quiet_sec)
             result.device_meta_path = self.config[section_key].get('device_meta_path', fallback=result.device_meta_path)
+            result.device_data_path = self.config[section_key].get('device_data_path', fallback=result.device_data_path)
+            result.decode_data_path = self.config[section_key].get('decode_data_path', fallback=result.decode_data_path)
 
         return result
 
