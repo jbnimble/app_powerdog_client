@@ -20,9 +20,6 @@ from powerdog.event import EventData
 from powerdog.pd import PowerdogDecoder, DataLimiter, PowerdogDataType, PowerdogMessageMonitor
 from powerdog.util import PowerdogUtil
 
-class TerminateTaskGroup(Exception):
-    """ Exception raised to terminate a task group """
-
 class AppService:
     def __init__(self):
         self.ble_scanner: BluetoothEventScanner = None
@@ -72,6 +69,18 @@ class App:
         self.service.ble_client.stop_client()
         self.service.mq_client.stop_client()
         self.event_to_action_loop.set()
+
+        time_limit = 10.0
+        while not self.is_app_stopped():
+            time_wait = 0.1
+            time_limit = time_limit - time_wait
+            await asyncio.sleep(time_wait)
+            if time_limit <= 0.0:
+                ble_scanner_state = self.service.ble_scanner.is_active()
+                ble_client_state = self.service.ble_client.is_active()
+                mq_client_state = self.service.mq_client.is_active()
+                self.logger.warning(f'App > stopping, time limit reached ble_scanner={ble_scanner_state} ble_client={ble_client_state} mq_client={mq_client_state}')
+                break
 
     def is_app_stopped(self) -> bool:
         return not self.service.ble_scanner.is_active() and not self.service.ble_client.is_active() and not self.service.mq_client.is_active()
@@ -320,25 +329,12 @@ class App:
                 self.task_group = task_group
                 self.task_group.create_task(coro=self.main())
         except asyncio.CancelledError:
-            # Attempt a clean shutdown, captures Ctrl-C KeyboardInterrupt
             await self.app_stop()
-            time_limit = 10.0
-            while not self.is_app_stopped():
-                time_wait = 0.1
-                time_limit = time_limit - time_wait
-                await asyncio.sleep(time_wait)
-                if time_limit <= 0.0:
-                    ble_scanner_state = self.service.ble_scanner.is_active()
-                    ble_client_state = self.service.ble_client.is_active()
-                    mq_client_state = self.service.mq_client.is_active()
-                    self.logger.warning(f'App > stopping, time limit reached ble_scanner={ble_scanner_state} ble_client={ble_client_state} mq_client={mq_client_state}')
-                    break
-        except TerminateTaskGroup:
-            # used during testing to forcefully quit the TaskGroup
-            self.logger.info('App > stopping via terminate')
-        # send final status=offline
-        broker_otp = BrokerOneTimePublish(config=self.data.br_config)
-        await broker_otp.publish(BrokerMessage(self.data.powerdog_status_topic, 'offline'))
+
+        if self.data.br_config.broker_host:
+            broker_otp = BrokerOneTimePublish(config=self.data.br_config)
+            await broker_otp.publish(BrokerMessage(self.data.powerdog_status_topic, 'offline'))
+
         self.logger.info('App > stopped')
 
 def main():
