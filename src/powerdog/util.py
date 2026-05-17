@@ -31,7 +31,7 @@ class PowerdogUtil:
 
     def get_broker_messages(data: PowerdogData) -> [BrokerMessage]:
         """
-        Map the WatchdogDataType and WatchdogDataValue to MQTT topics and payloads:
+        Map the PowerdogData to MQTT topics and payloads:
 
         - topic = powerdog/L1/voltage       payload = float
         - topic = powerdog/L1/amperage      payload = float
