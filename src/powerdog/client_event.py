@@ -177,12 +177,13 @@ class App:
                 self.task_group.create_task(self.service.mq_client.subscribe(topic=topic))
 
     def decode_service_data(self, notification: BLENotification) -> None:
+        self.write_data_to_file(self.data.pd_config.device_data_path, notification.data)
+
         if notification and notification.sender and notification.sender.uuid == self.data.ble_notify_specifier and notification.data:
             self.service.message_monitor.on_message('powerdog_raw')
             data = notification.data
             pd_data: PowerdogData = PowerdogDecoder.decode(raw_data=data)
 
-            self.write_data_to_file(self.data.pd_config.device_data_path, data)
             self.write_data_to_file(self.data.pd_config.decode_data_path, pd_data.__dict__, to_json=True)
 
             if pd_data.data_type == PowerdogDataType.DATA.value:
