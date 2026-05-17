@@ -7,10 +7,10 @@ from bleak import BleakGATTCharacteristic
 class PowerdogConfig:
     address: str = None
     service: str = None
-    limit_voltage_range: float = 0.0
-    limit_amperage_range: float = 0.0
+    limit_voltage_range: float = 3.0
+    limit_amperage_range: float = 3.0
     limit_wattage_range: float = 0.0
-    limit_quiet_sec: float = 0.0
+    limit_quiet_sec: float = 60.0
     device_meta_path: str = None
 
 @dataclass

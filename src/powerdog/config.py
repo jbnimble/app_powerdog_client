@@ -32,13 +32,13 @@ class Configuration:
         # POWERDOG > address is required
         section_key = 'POWERDOG'
         if  section_key in self.config:
-            result.address = self.config[section_key].get('address', fallback=None)
-            result.service = self.config[section_key].get('service', fallback=None)
-            result.limit_voltage_range = self.config[section_key].getfloat('limit_voltage_range', fallback=0.0)
-            result.limit_amperage_range = self.config[section_key].getfloat('limit_amperage_range', fallback=0.0)
-            result.limit_wattage_range = self.config[section_key].getfloat('limit_wattage_range', fallback=0.0)
-            result.limit_quiet_sec = self.config[section_key].getfloat('limit_quiet_sec', fallback=0.0)
-            result.device_meta_path = self.config[section_key].get('device_meta_path', fallback=None)
+            result.address = self.config[section_key].get('address', fallback=result.address)
+            result.service = self.config[section_key].get('service', fallback=result.service)
+            result.limit_voltage_range = self.config[section_key].getfloat('limit_voltage_range', fallback=result.limit_voltage_range)
+            result.limit_amperage_range = self.config[section_key].getfloat('limit_amperage_range', fallback=result.limit_amperage_range)
+            result.limit_wattage_range = self.config[section_key].getfloat('limit_wattage_range', fallback=result.limit_wattage_range)
+            result.limit_quiet_sec = self.config[section_key].getfloat('limit_quiet_sec', fallback=result.limit_quiet_sec)
+            result.device_meta_path = self.config[section_key].get('device_meta_path', fallback=result.device_meta_path)
 
         return result
 
