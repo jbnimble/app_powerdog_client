@@ -16,7 +16,7 @@ class PowerdogConfig:
 @dataclass
 class BrokerConfig:
     broker_host: str = None
-    broker_port: int = -1
+    broker_port: int = 1883
     broker_user: str = None
     broker_pass: str = None
     subscribe_topics = None

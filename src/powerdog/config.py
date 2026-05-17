@@ -48,15 +48,15 @@ class Configuration:
         # BROKER section required
         section_key = 'BROKER'
         if section_key in self.config:
-            result.broker_host = self.config[section_key].get('host', fallback=None)
-            result.broker_port = self.config[section_key].getint('port', fallback=1883)
-            result.broker_user = self.config[section_key].get('user', fallback=None)
-            result.broker_pass = self.config[section_key].get('pass', fallback=None)
+            result.broker_host = self.config[section_key].get('host', fallback=result.broker_host)
+            result.broker_port = self.config[section_key].getint('port', fallback=result.broker_port)
+            result.broker_user = self.config[section_key].get('user', fallback=result.broker_user)
+            result.broker_pass = self.config[section_key].get('pass', fallback=result.broker_pass)
             if 'subscribe_topics' in self.config[section_key] and len(self.config[section_key].get('subscribe_topics')) > 0:
                 topics = self.config[section_key].get('subscribe_topics')
                 result.subscribe_topics = topics.split(',')
-            else:
-                result.subscribe_topics = []
+        if not result.subscribe_topics:
+            result.subscribe_topics = []
 
         return result
 
