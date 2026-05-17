@@ -42,6 +42,7 @@ class AppData:
         self.prev_data: PowerdogData = None
         self.powerdog_discovery_topic: str = 'homeassistant/device/powerdog/config'
         self.powerdog_status_topic: str = 'powerdog/status'
+        self.homeassistant_status_topic: str = 'homeassistant/status'
         self.ble_device: BLEDevice = None
 
 class AppEvent(StrEnum):
@@ -66,7 +67,6 @@ class App:
         self.create_task(self.do_native_disconnect())
 
     async def app_stop(self) -> None:
-        # TODO determine way to publish status=offline message, but on CancelledError the BrokerEventClient automatically disconnects
         self.logger.debug('App > stopping')
         self.service.ble_scanner.stop_scanner()
         self.service.ble_client.stop_client()
@@ -160,10 +160,12 @@ class App:
     def subscribe_config_topics(self) -> None:
         self.task_group.create_task(self.service.mq_client.subscribe(topic=self.data.powerdog_discovery_topic))
         self.task_group.create_task(self.service.mq_client.subscribe(topic=self.data.powerdog_status_topic))
+        self.task_group.create_task(self.service.mq_client.subscribe(topic=self.data.homeassistant_status_topic))
 
-        for topic in self.data.br_config.subscribe_topics:
-            self.logger.info(f'Broker > subscribe {topic}')
-            self.task_group.create_task(self.service.mq_client.subscribe(topic=topic))
+        if self.data.br_config.subscribe_topics and len(self.data.br_config.subscribe_topics) > 0:
+            for topic in self.data.br_config.subscribe_topics:
+                self.logger.info(f'Broker > subscribe {topic}')
+                self.task_group.create_task(self.service.mq_client.subscribe(topic=topic))
 
     def decode_service_data(self, notification: BLENotification) -> None:
         if notification and notification.sender and notification.sender.uuid == self.data.ble_notify_specifier and notification.data:
@@ -195,24 +197,39 @@ class App:
     def on_subscribed_message(self, message) -> None:
         self.service.message_monitor.on_message('broker_subscribed')
         payload = str(message.payload, encoding='utf-8')
-        if message.topic == self.data.powerdog_status_topic and message.payload.decode('utf-8') == 'online':
-            self.logger.info(f'Published {message.topic}={payload}')
-            if not self.service.ble_client.is_notify(self.data.ble_notify_specifier):
-                self.ble_client_notify_start()
-        elif message.topic == self.data.powerdog_status_topic and message.payload.decode('utf-8') == 'offline':
-            self.logger.info(f'Published {message.topic}={payload}')
-            self.ble_client_notify_stop()
-        elif message.topic == self.data.powerdog_discovery_topic:
+        if message.topic == self.data.powerdog_discovery_topic:
             self.on_event_data(EventData(BrokerEvent.BROKER_CLIENT_DISCOVERY_SENT, message))
+        elif message.topic == self.data.powerdog_status_topic and payload == 'online':
+            self.logger.info(f'Received {message.topic}={payload}')
+            self.ble_client_notify_start()
+        elif message.topic == self.data.homeassistant_status_topic and payload == 'online':
+            # HomeAssistant online
+            self.logger.info(f'Received {message.topic}={payload}')
+            self.on_homeassistant_online()
+        elif message.topic == self.data.homeassistant_status_topic and payload == 'offline':
+            # HomeAssistant offline
+            self.logger.info(f'Received {message.topic}={payload}')
+            self.ble_client_notify_stop()
         else:
-            self.logger.info(f'Message from {message.topic}={message.payload}')
+            self.logger.info(f'Received {message.topic}={message.payload}')
+
+    async def publish_powerdog_online(self) -> None:
+        """ publish powerdog/status, removes "Unavailable" status from sensors in Home Assistant """
+        await self.service.mq_client.publish([BrokerMessage(self.data.powerdog_status_topic, 'online')])
+
+    def on_homeassistant_online(self) -> None:
+        # wait 2 seconds then publish discovery, gives HomeAssistant time to do some processing
+        async def custom_task() -> None:
+            await asyncio.sleep(2.0)
+            self.publish_discovery_payload()
+        self.create_task(custom_task())
 
     def on_discovery_published(self) -> None:
-        # publish powerdog/status, removes "Unavailable" status from sensors in Home Assistant
-        async def publish_powerdog_online(topic: str) -> None:
+        # wait 2 seconds then publish online status, gives HomeAssistant time to process discovery
+        async def custom_task() -> None:
             await asyncio.sleep(2.0)
-            await self.service.mq_client.publish([BrokerMessage(topic, 'online')])
-        self.create_task(publish_powerdog_online(self.data.powerdog_status_topic))
+            await self.publish_powerdog_online()
+        self.create_task(custom_task())
 
     async def main(self) -> None:
         self.on_event_data(EventData(AppEvent.APP_START_SERVICES))
@@ -244,8 +261,8 @@ class App:
             elif event.name == BluetoothEvent.BLE_NOTIFY_FOUND:
                 self.logger.info(f'BLE notify service > found')
                 self.publish_discovery_payload()
-            # elif event.name == BluetoothEvent.BLE_NOTIFY_STARTED:
-            #     self.logger.info('BLE notify service > started')
+            elif event.name == BluetoothEvent.BLE_NOTIFY_STARTED:
+                self.logger.info(f'BLE notify service > started {self.data.ble_notify_specifier}')
             elif event.name == BluetoothEvent.BLE_NOTIFY_DATA:
                 self.logger.debug(f'Broker > notification {event.data}')
                 self.decode_service_data(event.data)
@@ -255,8 +272,8 @@ class App:
                 self.logger.warning(f'BLE client > {event.name}')
             elif event.name == BluetoothEvent.BLE_NOTIFY_NOT_FOUND:
                 self.logger.warning(f'BLE client > {event.name}')
-            # elif event.name == BluetoothEvent.BLE_NOTIFY_STOPPED:
-            #     self.logger.info('BLE notify service > stopped')
+            elif event.name == BluetoothEvent.BLE_NOTIFY_STOPPED:
+                self.logger.info('BLE notify service > stopped')
             elif event.name == BluetoothEvent.BLE_CLIENT_META_DATA:
                 self.on_ble_client_metadata(event.data)
             elif event.name == BluetoothEvent.BLE_CLIENT_META_FAILURE:
@@ -271,8 +288,8 @@ class App:
             #     self.logger.debug('Broker > starting')
             # elif event.name == BrokerEvent.BROKER_CLIENT_CONFIGURED:
             #     self.logger.info('Broker > configured')
-            # elif event.name == BrokerEvent.BROKER_CLIENT_SUBSCRIBED:
-            #     self.logger.info(f'Broker > subscribed {event.data}')
+            elif event.name == BrokerEvent.BROKER_CLIENT_SUBSCRIBED:
+                self.logger.info(f'Broker > subscribed {event.data}')
             elif event.name == BrokerEvent.BROKER_CLIENT_FAILURE:
                 self.logger.warning(f'Broker > {event.name}')
             elif event.name == BrokerEvent.BROKER_CLIENT_CONNECT_FAIL:

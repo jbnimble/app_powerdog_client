@@ -107,6 +107,7 @@ class BluetoothEventClient:
                 raise Exception('Client not active')
             await self._context.start_notify(char_specifier=char_specifier, callback=self._on_notify)
             self._notify_specifier_set.add(char_specifier)
+            self._on_event(EventData(BluetoothEvent.BLE_NOTIFY_STARTED))
         except Exception as e:
             self.logger.error(f'Start notify failure {char_specifier} caused {e}')
             self._on_event(EventData(BluetoothEvent.BLE_NOTIFY_FAIL_START))
@@ -118,6 +119,7 @@ class BluetoothEventClient:
                 raise Exception('Client not active')
             await self._context.stop_notify(char_specifier=char_specifier)
             self._notify_specifier_set.remove(char_specifier)
+            self._on_event(EventData(BluetoothEvent.BLE_NOTIFY_STOPPED))
         except Exception as e:
             self.logger.error(f'Stop notify failure {char_specifier} caused {e}')
             self._on_event(EventData(BluetoothEvent.BLE_NOTIFY_FAIL_STOP))
