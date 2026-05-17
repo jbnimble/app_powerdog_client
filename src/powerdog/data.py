@@ -23,7 +23,7 @@ class BrokerConfig:
 
 @dataclass
 class ClientConfig:
-    log_level: str = None
+    log_level: str = 'INFO'
 
 @dataclass
 class PowerdogData:

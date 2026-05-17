@@ -325,9 +325,6 @@ class App:
         self.logger.info('App > stopped')
 
 def main():
-    logging.basicConfig(format='%(asctime)s %(levelname)s:%(name)s %(message)s', level=logging.INFO, datefmt='%Y-%m-%d %H:%M:%S')
-    # logging.getLogger("asyncio").setLevel(logging.WARNING)
-
     arg_parser = argparse.ArgumentParser(description='Powerdog Client')
     arg_parser.add_argument('--config-file', help='INI style configuration file', default='config.ini')
     args = arg_parser.parse_args()
@@ -336,6 +333,14 @@ def main():
     pd_config = config.powerdog()
     br_config = config.broker()
     cl_config = config.client()
+
+    logging_format = '%(asctime)s %(levelname)s:%(name)s %(message)s'
+    logging_datefmt = '%Y-%m-%d %H:%M:%S'
+
+    if cl_config.log_level in logging.getLevelNamesMapping():
+        logging.basicConfig(format=logging_format, level=logging.getLevelNamesMapping()[cl_config.log_level], datefmt=logging_datefmt)
+    else:
+        logging.basicConfig(format=logging_format, level=logging.INFO, datefmt=logging_datefmt)
 
     app = App(pd_config=pd_config, br_config=br_config, cl_config=cl_config)
     asyncio.run(app.execute(), debug=False)

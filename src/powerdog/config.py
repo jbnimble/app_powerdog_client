@@ -65,6 +65,6 @@ class Configuration:
 
         section_key = 'CLIENT'
         if section_key in self.config:
-            result.log_level = self.config[section_key].get('log_level', fallback='INFO')
+            result.log_level = self.config[section_key].get('log_level', fallback=result.log_level)
 
         return result
