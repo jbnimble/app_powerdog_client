@@ -15,7 +15,7 @@ from powerdog.ble import BluetoothEvent, BluetoothEventClient, BluetoothEventSca
 from powerdog.config import PowerdogConfig, BrokerConfig, ClientConfig, Configuration
 from powerdog.data import PowerdogData, GattData, PowerdogModelType, BluetoothDeviceMeta, DiscoveryPayload, BLENotification
 from powerdog.ha import MqttDiscovery
-from powerdog.mq import BrokerEventClient, BrokerMessage, BrokerEvent
+from powerdog.mq import BrokerEventClient, BrokerMessage, BrokerEvent, BrokerOneTimePublish
 from powerdog.event import EventData
 from powerdog.pd import PowerdogDecoder, DataLimiter, PowerdogDataType, PowerdogMessageMonitor
 from powerdog.util import PowerdogUtil
@@ -225,6 +225,8 @@ class App:
             # BLE scanner events
             # elif event.name == BluetoothEvent.BLE_SCANNER_STARTED:
             #     self.logger.info('BLE scanner > started')
+            elif event.name == BluetoothEvent.BLE_SCANNER_FAILED:
+                self.logger.warning(f'BLE scanner > {event.name}')
             elif event.name == BluetoothEvent.BLE_SCANNER_DEVICE:
                 self.on_scanner_device(event.data['device'])
             elif event.name == BluetoothEvent.BLE_SCANNER_STOPPED:
@@ -235,6 +237,8 @@ class App:
             elif event.name == BluetoothEvent.BLE_CLIENT_STARTED:
                 self.logger.info(f'BLE client > started {event.data}')
                 self.on_ble_client_started()
+            elif event.name == BluetoothEvent.BLE_CLIENT_FAILURE:
+                self.logger.warning(f'BLE client > {event.name}')
             # elif event.name == BluetoothEvent.BLE_CLIENT_STOPPED:
             #     self.logger.info('BLE client > stopped')
             elif event.name == BluetoothEvent.BLE_NOTIFY_FOUND:
@@ -245,10 +249,18 @@ class App:
             elif event.name == BluetoothEvent.BLE_NOTIFY_DATA:
                 self.logger.debug(f'Broker > notification {event.data}')
                 self.decode_service_data(event.data)
+            elif event.name == BluetoothEvent.BLE_NOTIFY_FAIL_START:
+                self.logger.warning(f'BLE client > {event.name}')
+            elif event.name == BluetoothEvent.BLE_NOTIFY_FAIL_STOP:
+                self.logger.warning(f'BLE client > {event.name}')
+            elif event.name == BluetoothEvent.BLE_NOTIFY_NOT_FOUND:
+                self.logger.warning(f'BLE client > {event.name}')
             # elif event.name == BluetoothEvent.BLE_NOTIFY_STOPPED:
             #     self.logger.info('BLE notify service > stopped')
             elif event.name == BluetoothEvent.BLE_CLIENT_META_DATA:
                 self.on_ble_client_metadata(event.data)
+            elif event.name == BluetoothEvent.BLE_CLIENT_META_FAILURE:
+                self.logger.warning(f'BLE client > {event.name}')
             # elif event.name == BluetoothEvent.BLE_CLIENT_DISCONNECTED:
             #     self.logger.info('BLE client > disconnected')
             # Broker events
@@ -261,6 +273,14 @@ class App:
             #     self.logger.info('Broker > configured')
             # elif event.name == BrokerEvent.BROKER_CLIENT_SUBSCRIBED:
             #     self.logger.info(f'Broker > subscribed {event.data}')
+            elif event.name == BrokerEvent.BROKER_CLIENT_FAILURE:
+                self.logger.warning(f'Broker > {event.name}')
+            elif event.name == BrokerEvent.BROKER_CLIENT_CONNECT_FAIL:
+                self.logger.warning(f'Broker > {event.name}')
+            elif event.name == BrokerEvent.BROKER_CLIENT_SUBSCRIBE_FAIL:
+                self.logger.warning(f'Broker > {event.name}')
+            elif event.name == BrokerEvent.BROKER_CLIENT_PUBLISH_FAIL:
+                self.logger.warning(f'Broker > {event.name}')
             elif event.name == BrokerEvent.BROKER_CLIENT_DECODED_DATA:
                 self.logger.debug(f'Broker > decoded {event.data}')
                 self.publish_broker_data(event.data)
@@ -299,6 +319,9 @@ class App:
         except TerminateTaskGroup:
             # used during testing to forcefully quit the TaskGroup
             self.logger.info('App > stopping via terminate')
+        # send final status=offline
+        broker_otp = BrokerOneTimePublish(config=self.data.br_config)
+        await broker_otp.publish(BrokerMessage(self.data.powerdog_status_topic, 'offline'))
         self.logger.info('App > stopped')
 
 def main():

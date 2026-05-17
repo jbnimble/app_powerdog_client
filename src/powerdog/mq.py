@@ -175,3 +175,19 @@ class BrokerEventClient:
             except Exception as e:
                 self.logger.error(f'Publish failure {message} caused {e}')
                 self._on_event(EventData(BrokerEvent.BROKER_CLIENT_PUBLISH_FAIL))
+
+class BrokerOneTimePublish:
+    def __init__(self, config: BrokerConfig):
+        self.logger: Logger = logging.getLogger(self.__class__.__name__)
+        self._config = config
+
+    async def publish(self, message: BrokerMessage) -> None:
+        try:
+            async with AsyncioPahoClient() as context:
+                if self._config.broker_user and self._config.broker_pass:
+                    context.username_pw_set(username=self._config.broker_user, password=self._config.broker_pass)
+                context.connect(self._config.broker_host, port=self._config.broker_port)
+                result = context.publish(message.topic, message.payload)
+                self.logger.info(f'Published {message} with {result}')
+        except Exception as e:
+            self.logger.error(f'Client failure {e}')
