@@ -16,9 +16,8 @@ class PowerdogDecoder:
     """
     Decode the notify service data
 
-    The data is a 20 byte hex string, with the following patterns:
-    5245534554.............................. resetting
-    72656c6179206f6e........................ relay on
+    5245534554                               response for "RESEt" command
+    72656c6179206f6e                         response for "RELAY ON" command
     ..................................000000 check point line 1, previous data was line 1
     ..................................010101 check point line 2, previous data was line 2
     010320vvvvvvvvaaaaaaaawwwwwwwwppppppppee > data line (v=volts, a=amps, w=watts, p=power, e=error)
