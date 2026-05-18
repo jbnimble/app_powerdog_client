@@ -34,11 +34,15 @@ class AppData:
         self.br_config: BrokerConfig = br_config
         self.cl_config: ClientConfig = cl_config
         self.ble_device_meta: BluetoothDeviceMeta = None
-        self.ble_notify_specifier: str = None
         self.discovery_payload: DiscoveryPayload = None
         self.prev_data: PowerdogData = None
         self.powerdog_discovery_topic: str = 'homeassistant/device/powerdog/config'
         self.powerdog_status_topic: str = 'powerdog/status'
+        self.powerdog_command_topic: str = 'powerdog/set'
+        self.powerdog_notify_desc_value: str = 'TX'
+        self.powerdog_command_desc_value: str = 'RX'
+        self.powerdog_command_reset: str = 'RESEt'
+        self.powerdog_command_relay: str = 'RELAY ON'
         self.homeassistant_status_topic: str = 'homeassistant/status'
         self.ble_device: BLEDevice = None
 
@@ -128,13 +132,6 @@ class App:
     def on_ble_client_metadata(self, meta_data: BluetoothDeviceMeta) -> None:
         self.logger.info('BLE client > metadata')
         self.data.ble_device_meta = meta_data
-        self.data.ble_notify_specifier = self.data.ble_device_meta.find_char_uuid_by_property('notify')
-
-        if not self.data.ble_notify_specifier:
-            self.on_event_data(EventData(BluetoothEvent.BLE_NOTIFY_NOT_FOUND))
-        else:
-            self.on_event_data(EventData(BluetoothEvent.BLE_NOTIFY_FOUND))
-
         self.write_meta_to_file()
 
     def write_meta_to_file(self):
@@ -151,11 +148,17 @@ class App:
 
     def ble_client_notify_start(self) -> None:
         self.logger.debug('BLE notify service > start')
-        self.create_task(self.service.ble_client.start_notify(self.data.ble_notify_specifier))
+        if self.service.ble_client.is_active() and self.data.ble_device_meta:
+            uuid = self.data.ble_device_meta.find_char_uuid_by_descriptor_data(self.data.powerdog_notify_desc_value)
+            char = self.service.ble_client.get_char_by_uuid(uuid)
+            self.create_task(self.service.ble_client.start_notify(char))
 
     def ble_client_notify_stop(self) -> None:
         self.logger.debug('BLE notify service > stop')
-        self.create_task(self.service.ble_client.stop_notify(self.data.ble_notify_specifier))
+        if self.service.ble_client.is_active() and self.data.ble_device_meta:
+            uuid = self.data.ble_device_meta.find_char_uuid_by_descriptor_data(self.data.powerdog_notify_desc_value)
+            char = self.service.ble_client.get_char_by_uuid(uuid)
+            self.create_task(self.service.ble_client.stop_notify(char))
 
     def broker_start(self) -> None:
         if self.data.br_config.broker_host:
@@ -169,6 +172,7 @@ class App:
     def subscribe_config_topics(self) -> None:
         self.task_group.create_task(self.service.mq_client.subscribe(topic=self.data.powerdog_discovery_topic))
         self.task_group.create_task(self.service.mq_client.subscribe(topic=self.data.powerdog_status_topic))
+        self.task_group.create_task(self.service.mq_client.subscribe(topic=self.data.powerdog_command_topic))
         self.task_group.create_task(self.service.mq_client.subscribe(topic=self.data.homeassistant_status_topic))
 
         if self.data.br_config.subscribe_topics and len(self.data.br_config.subscribe_topics) > 0:
@@ -177,25 +181,27 @@ class App:
                 self.task_group.create_task(self.service.mq_client.subscribe(topic=topic))
 
     def decode_service_data(self, notification: BLENotification) -> None:
+        self.service.message_monitor.on_message('powerdog_raw')
+
+        pd_data: PowerdogData = PowerdogDecoder.decode(raw_data=notification.data)
+
         self.write_data_to_file(self.data.pd_config.device_data_path, notification.data)
+        self.write_data_to_file(self.data.pd_config.decode_data_path, pd_data.__dict__, to_json=True)
 
-        if notification and notification.sender and notification.sender.uuid == self.data.ble_notify_specifier and notification.data:
-            self.service.message_monitor.on_message('powerdog_raw')
-            data = notification.data
-            pd_data: PowerdogData = PowerdogDecoder.decode(raw_data=data)
-
-            self.write_data_to_file(self.data.pd_config.decode_data_path, pd_data.__dict__, to_json=True)
-
-            if pd_data.data_type == PowerdogDataType.DATA.value:
-                self.data.prev_data = pd_data # save data until next LINE1 or LINE2 notification
-            elif self.data.prev_data and (pd_data.data_type == PowerdogDataType.LINE1.value or pd_data.data_type == PowerdogDataType.LINE2.value):
-                result = self.data.prev_data
-                result.data_type = pd_data.data_type # update LINE1 or LINE2 type on previous DATA line
-                if self.service.data_limiter.check(result):
-                    self.on_event_data(EventData(BrokerEvent.BROKER_CLIENT_DECODED_DATA, result))
-                    self.service.message_monitor.on_message('powerdog_decoded')
+        if pd_data.data_type == PowerdogDataType.DATA.value:
+            self.data.prev_data = pd_data # save data until next LINE1 or LINE2 notification
+        elif self.data.prev_data and (pd_data.data_type == PowerdogDataType.LINE1.value or pd_data.data_type == PowerdogDataType.LINE2.value):
+            result = self.data.prev_data
+            result.data_type = pd_data.data_type # update LINE1 or LINE2 type on previous DATA line
+            if self.service.data_limiter.check(result):
+                self.on_event_data(EventData(BrokerEvent.BROKER_CLIENT_DECODED_DATA, result))
+                self.service.message_monitor.on_message('powerdog_decoded')
+        elif pd_data.data_type == PowerdogDataType.RESET.value:
+            self.logger.info(f'Powerdog command > reset')
+        elif pd_data.data_type == PowerdogDataType.RELAY.value:
+            self.logger.info(f'Powerdog command > relay')
         else:
-            self.logger.warning(f'Skipped decode {notification}')
+            self.logger.info(f'Unknown data {notification} {pd_data}')
 
     def write_data_to_file(self, file_path: str, data: str, to_json: bool = False) -> None:
         if file_path:
@@ -207,6 +213,19 @@ class App:
                 self.service.message_monitor.on_message(file_path)
             except Exception as e:
                 self.logger.error(f'Failed to write {file_path} due to: {e}')
+
+    def handle_command(self, command: str) -> None:
+        async def send_command(char_specifier, command: str) -> None:
+            try:
+                await self.service.ble_client.write_gatt_char(char_specifier, command.encode(encoding='ascii'))
+                self.logger.info(f'BLE Client > command {char_specifier} command={command}')
+            except Exception as e:
+                self.logger.error(f'BLE Client > write {char_specifier} {command} failed {e}')
+        if self.service.ble_client.is_active():
+            char_uuid = self.data.ble_device_meta.find_char_uuid_by_descriptor_data(self.data.powerdog_command_desc_value)
+            char_specifier = self.service.ble_client.get_char_by_uuid(char_uuid=char_uuid)
+            if char_specifier and command in [self.data.powerdog_command_reset, self.data.powerdog_command_relay]:
+                self.create_task(send_command(char_specifier=char_specifier, command=command))
 
     def publish_broker_data(self, data: PowerdogData) -> None:
         if self.service.mq_client.is_active():
@@ -235,6 +254,8 @@ class App:
             # HomeAssistant offline
             self.logger.info(f'Received {message.topic}={payload}')
             self.ble_client_notify_stop()
+        elif message.topic == self.data.powerdog_command_topic:
+            self.handle_command(payload)
         else:
             self.logger.info(f'Received {message.topic}={message.payload}')
 
@@ -283,27 +304,21 @@ class App:
                 self.logger.warning(f'BLE client > {event.name}')
             # elif event.name == BluetoothEvent.BLE_CLIENT_STOPPED:
             #     self.logger.info('BLE client > stopped')
-            elif event.name == BluetoothEvent.BLE_NOTIFY_FOUND:
-                self.logger.info(f'BLE notify service > found')
-                self.publish_discovery_payload()
-
-                if self.data.pd_config.device_data_path or self.data.pd_config.decode_data_path:
-                    self.ble_client_notify_start()
             elif event.name == BluetoothEvent.BLE_NOTIFY_STARTED:
-                self.logger.info(f'BLE notify service > started {self.data.ble_notify_specifier}')
+                self.logger.info(f'BLE notify service > started {event.data}')
             elif event.name == BluetoothEvent.BLE_NOTIFY_DATA:
                 self.logger.debug(f'Broker > notification {event.data}')
                 self.decode_service_data(event.data)
             elif event.name == BluetoothEvent.BLE_NOTIFY_FAIL_START:
                 self.logger.warning(f'BLE client > {event.name}')
             elif event.name == BluetoothEvent.BLE_NOTIFY_FAIL_STOP:
-                self.logger.warning(f'BLE client > {event.name}')
-            elif event.name == BluetoothEvent.BLE_NOTIFY_NOT_FOUND:
-                self.logger.warning(f'BLE client > {event.name}')
+                self.logger.warning(f'BLE client > {event.name} {event.data}')
             elif event.name == BluetoothEvent.BLE_NOTIFY_STOPPED:
-                self.logger.info('BLE notify service > stopped')
+                self.logger.info('fBLE notify service > stopped {event.data}')
             elif event.name == BluetoothEvent.BLE_CLIENT_META_DATA:
                 self.on_ble_client_metadata(event.data)
+                self.publish_discovery_payload()
+                self.ble_client_notify_start()
             elif event.name == BluetoothEvent.BLE_CLIENT_META_FAILURE:
                 self.logger.warning(f'BLE client > {event.name}')
             # elif event.name == BluetoothEvent.BLE_CLIENT_DISCONNECTED:
@@ -373,6 +388,8 @@ def main():
         logging.basicConfig(format=logging_format, level=logging.getLevelNamesMapping()[cl_config.log_level], datefmt=logging_datefmt)
     else:
         logging.basicConfig(format=logging_format, level=logging.INFO, datefmt=logging_datefmt)
+
+    # logging.getLogger('bleak.backends.bluezdbus.client').setLevel(logging.DEBUG)
 
     app = App(pd_config=pd_config, br_config=br_config, cl_config=cl_config)
     asyncio.run(app.execute(), debug=False)

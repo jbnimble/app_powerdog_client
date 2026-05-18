@@ -4,7 +4,7 @@ from asyncio.subprocess import Process
 from enum import StrEnum
 import logging
 import platform
-from typing import Callable, Union
+from typing import Callable
 from uuid import UUID
 
 from bleak import BleakClient, BleakScanner, BLEDevice, AdvertisementData, BleakGATTCharacteristic
@@ -92,7 +92,7 @@ class BluetoothEventClient:
         """ Trigger client stop """
         self._context_keep_alive.set()
 
-    def is_notify(self, char_specifier: Union[BleakGATTCharacteristic, int, str, UUID]) -> bool:
+    def is_notify(self, char_specifier: BleakGATTCharacteristic) -> bool:
         """" Status if char_specifier is an active notifier """
         return char_specifier in self._notify_specifier_set
 
@@ -100,29 +100,49 @@ class BluetoothEventClient:
         """ Status if client is active and connected to BLE device """
         return self._context and not self._context_keep_alive.is_set() and self._context.is_connected
 
-    async def start_notify(self, char_specifier: Union[BleakGATTCharacteristic, int, str, UUID]) -> None:
+    async def start_notify(self, char_specifier: BleakGATTCharacteristic) -> None:
         """ Start notifications for char_specifier """
         try:
             if not self.is_active():
                 raise Exception('Client not active')
             await self._context.start_notify(char_specifier=char_specifier, callback=self._on_notify)
             self._notify_specifier_set.add(char_specifier)
-            self._on_event(EventData(BluetoothEvent.BLE_NOTIFY_STARTED))
+            self._on_event(EventData(BluetoothEvent.BLE_NOTIFY_STARTED, char_specifier))
         except Exception as e:
             self.logger.error(f'Start notify failure {char_specifier} caused {e}')
-            self._on_event(EventData(BluetoothEvent.BLE_NOTIFY_FAIL_START))
+            self._on_event(EventData(BluetoothEvent.BLE_NOTIFY_FAIL_START, char_specifier))
 
-    async def stop_notify(self, char_specifier: Union[BleakGATTCharacteristic, int, str, UUID]) -> None:
+    async def stop_notify(self, char_specifier: BleakGATTCharacteristic) -> None:
         """ Stop notifications for char_specifier """
         try:
             if not self.is_active():
                 raise Exception('Client not active')
             await self._context.stop_notify(char_specifier=char_specifier)
             self._notify_specifier_set.remove(char_specifier)
-            self._on_event(EventData(BluetoothEvent.BLE_NOTIFY_STOPPED))
+            self._on_event(EventData(BluetoothEvent.BLE_NOTIFY_STOPPED, char_specifier))
         except Exception as e:
             self.logger.error(f'Stop notify failure {char_specifier} caused {e}')
-            self._on_event(EventData(BluetoothEvent.BLE_NOTIFY_FAIL_STOP))
+            self._on_event(EventData(BluetoothEvent.BLE_NOTIFY_FAIL_STOP, char_specifier))
+
+    def get_char_by_uuid(self, char_uuid: str) -> BleakGATTCharacteristic | None:
+        result = None
+        if self.is_active() and char_uuid:
+            result = self._context.services.get_characteristic(specifier=char_uuid)
+        return result
+
+    async def write_gatt_char(self, char_specifier: BleakGATTCharacteristic, data: bytes) -> None:
+        if self.is_active():
+            await self._context.write_gatt_char(char_specifier=char_specifier, data=data, response=True)
+
+    async def read_gatt_char(self, char_specifier: BleakGATTCharacteristic) -> None:
+        if self.is_active():
+            try:
+                data = await self._context.read_gatt_char(char_specifier=char_specifier)
+                data_hex = data.hex()
+                data_ascii = PowerdogUtil.bytearray_to_ascii(data)
+                self.logger.info(f'READ {char_specifier} hex={data_hex} asc={data_ascii}')
+            except Exception as e:
+                self.logger.error(f'READ GATT {char_specifier} caused {e}')
 
     async def get_meta_data(self) -> None:
         """ Send event with BluetoothDeviceMeta or failure event """
