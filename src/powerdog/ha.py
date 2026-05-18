@@ -151,7 +151,7 @@ class MqttDiscovery:
             },
             'powerdog_line1_error_status': {
                 'unique_id': 'powerdog_line1_error_status',
-                'name': 'L1 Error',
+                'name': 'L1 Status',
                 'platform': 'sensor',
                 'state_topic': 'powerdog/L1/error_status',
             },
@@ -207,7 +207,7 @@ class MqttDiscovery:
                 },
                 'powerdog_line2_error_status': {
                     'unique_id': 'powerdog_line2_error_status',
-                    'name': 'L2 Error',
+                    'name': 'L2 Status',
                     'platform': 'sensor',
                     'state_topic': 'powerdog/L2/error_status',
                 },
