@@ -164,3 +164,16 @@ class BluetoothDeviceMeta:
                         if char.properties and prop_value in char.properties:
                             return char.uuid
         return result
+
+    def find_char_uuid_by_descriptor_data(self, desc_data: str) -> str | None:
+        """ Find the characteristic UUID with a descriptor that has the desc_data value """
+        result = None
+        if desc_data and self.service and len(self.service) > 0:
+            for serv in self.service:
+                if serv.characteristic and len(serv.characteristic) > 0:
+                    for char in serv.characteristic:
+                        if char.descriptor and len(char.descriptor) > 0:
+                            for desc in char.descriptor:
+                                if desc and desc.asc_data and desc.asc_data == desc_data:
+                                    return char.uuid
+        return result
