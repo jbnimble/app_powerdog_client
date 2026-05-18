@@ -7,6 +7,7 @@ from powerdog.util import PowerdogUtil
 # https://www.home-assistant.io/integrations/mqtt
 # Example discovery payload https://github.com/home-assistant/core/blob/dev/homeassistant/components/mqtt/schemas.py#L197
 # Platform > sensor https://www.home-assistant.io/integrations/sensor/
+# Button > device_class ButtonDeviceClass identify|restart|update https://www.home-assistant.io/integrations/button/#device-class
 # {
 #     'device': {
 #         'identifiers': ['MY_UNIQUE_ID'], # unique id's that identify the device
@@ -213,6 +214,25 @@ class MqttDiscovery:
                 },
             }
             result.update(line2_result)
+        button_components = {
+            'powerdog_button_reset': {
+                'unique_id': 'powerdog_button_reset',
+                'name': 'Reset Usage',
+                'platform': 'button',
+                'device_class': 'restart',
+                'command_topic': 'powerdog/set',
+                'payload_press': 'RESEt',
+            },
+            'powerdog_button_relay': {
+                'unique_id': 'powerdog_button_relay',
+                'name': 'Relay On',
+                'platform': 'button',
+                'device_class': 'update',
+                'command_topic': 'powerdog/set',
+                'payload_press': 'RELAY ON',
+            },
+        }
+        result.update(button_components)
         return result
 
     def get_discovery_payload(device_meta: BluetoothDeviceMeta) -> DiscoveryPayload:
