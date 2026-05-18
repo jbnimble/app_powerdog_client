@@ -48,21 +48,23 @@ class PowerdogUtil:
         """
         result = []
 
-        line_code = 'unk'
+        if data.data_type == PowerdogDataType.RELAY.value or data.data_type == PowerdogDataType.RESET.value:
+            result.append(BrokerMessage(topic=f'powerdog/L1/error_status', payload=PowerdogUtil.get_status_message(data=data)))
+            result.append(BrokerMessage(topic=f'powerdog/L2/error_status', payload=PowerdogUtil.get_status_message(data=data)))
+
         if data.data_type == PowerdogDataType.LINE1.value or data.data_type == PowerdogDataType.LINE2.value:
             line_code = f'L{data.data_type}'
-
-        result.append(BrokerMessage(topic=f'powerdog/{line_code}/voltage', payload=data.voltage))
-        result.append(BrokerMessage(topic=f'powerdog/{line_code}/amperage', payload=data.amperage))
-        result.append(BrokerMessage(topic=f'powerdog/{line_code}/wattage', payload=data.wattage))
-        result.append(BrokerMessage(topic=f'powerdog/{line_code}/power_usage', payload=data.power_usage))
-        result.append(BrokerMessage(topic=f'powerdog/{line_code}/error_code', payload=data.error))
-        result.append(BrokerMessage(topic=f'powerdog/{line_code}/error_status', payload=PowerdogUtil.get_error_status(data=data)))
+            result.append(BrokerMessage(topic=f'powerdog/{line_code}/voltage', payload=data.voltage))
+            result.append(BrokerMessage(topic=f'powerdog/{line_code}/amperage', payload=data.amperage))
+            result.append(BrokerMessage(topic=f'powerdog/{line_code}/wattage', payload=data.wattage))
+            result.append(BrokerMessage(topic=f'powerdog/{line_code}/power_usage', payload=data.power_usage))
+            result.append(BrokerMessage(topic=f'powerdog/{line_code}/error_code', payload=data.error))
+            result.append(BrokerMessage(topic=f'powerdog/{line_code}/error_status', payload=PowerdogUtil.get_status_message(data=data)))
 
         return result
 
 
-    def get_error_status(data: PowerdogData) -> str:
+    def get_status_message(data: PowerdogData) -> str:
         """
         Map the error code and data to textual error descriptions
         Add unsafe/high/low context for voltage errors
@@ -90,6 +92,10 @@ class PowerdogUtil:
             result = f'E{data.error}: missing neutral'
         elif PowerdogDataError.SURGE_REPLACE.value == data.error:
             result = 'E9: replace surge protection board'
+        elif PowerdogDataType.RELAY.value == data.data_type:
+            result = 'RELAY'
+        elif PowerdogDataType.RESET.value == data.data_type:
+            result = 'RESET'
         return result
 
     def json_serializer(obj: Any) -> Any:

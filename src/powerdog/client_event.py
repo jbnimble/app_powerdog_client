@@ -198,8 +198,10 @@ class App:
                 self.service.message_monitor.on_message('powerdog_decoded')
         elif pd_data.data_type == PowerdogDataType.RESET.value:
             self.logger.info(f'Powerdog command > reset')
+            self.on_event_data(EventData(BrokerEvent.BROKER_CLIENT_DECODED_DATA, pd_data))
         elif pd_data.data_type == PowerdogDataType.RELAY.value:
             self.logger.info(f'Powerdog command > relay')
+            self.on_event_data(EventData(BrokerEvent.BROKER_CLIENT_DECODED_DATA, pd_data))
         else:
             self.logger.info(f'Unknown data {notification} {pd_data}')
 
