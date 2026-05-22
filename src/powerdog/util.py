@@ -48,6 +48,10 @@ class PowerdogUtil:
         """
         result = []
 
+        if not data.data_type:
+            result.append(BrokerMessage(topic=f'powerdog/L1/error_status', payload=PowerdogUtil.get_status_message(data=data)))
+            result.append(BrokerMessage(topic=f'powerdog/L2/error_status', payload=PowerdogUtil.get_status_message(data=data)))
+
         if data.data_type == PowerdogDataType.RELAY.value or data.data_type == PowerdogDataType.RESET.value:
             result.append(BrokerMessage(topic=f'powerdog/L1/error_status', payload=PowerdogUtil.get_status_message(data=data)))
             result.append(BrokerMessage(topic=f'powerdog/L2/error_status', payload=PowerdogUtil.get_status_message(data=data)))
@@ -69,8 +73,11 @@ class PowerdogUtil:
         Map the error code and data to textual error descriptions
         Add unsafe/high/low context for voltage errors
         """
-        result = 'OK'
-        if PowerdogDataError.VOLTAGE_1.value == data.error:
+        result = 'OFF'
+
+        if PowerdogDataError.NONE.value == data.error:
+            result = 'ON'
+        elif PowerdogDataError.VOLTAGE_1.value == data.error:
             desc = 'low' if data.voltage < 104.0 else 'unsafe'
             desc = 'high' if data.voltage > 132.0 else desc
             result = f'E{data.error}: Line1 {desc} voltage'
@@ -85,14 +92,15 @@ class PowerdogUtil:
         elif PowerdogDataError.NEUTRAL_REVERSED_1.value == data.error:
             result = f'E{data.error}: Line1 neutral/hot reversed'
         elif PowerdogDataError.NEUTRAL_REVERSED_2.value == data.error:
-            result = f'E{data.error}: Line1 neutral/hot reversed'
+            result = f'E{data.error}: Line2 neutral/hot reversed'
         elif PowerdogDataError.GROUND_MISSING.value == data.error:
             result = f'E{data.error}: missing ground'
         elif PowerdogDataError.NEUTRAL_MISSING.value == data.error:
             result = f'E{data.error}: missing neutral'
         elif PowerdogDataError.SURGE_REPLACE.value == data.error:
-            result = 'E9: replace surge protection board'
-        elif PowerdogDataType.RELAY.value == data.data_type:
+            result = f'E{data.error}: replace surge protection board'
+
+        if PowerdogDataType.RELAY.value == data.data_type:
             result = 'RELAY'
         elif PowerdogDataType.RESET.value == data.data_type:
             result = 'RESET'
