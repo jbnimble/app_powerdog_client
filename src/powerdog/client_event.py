@@ -8,6 +8,7 @@ from functools import partial
 import json
 import logging
 from logging import Logger
+import time
 
 from bleak import BLEDevice
 
@@ -45,6 +46,8 @@ class AppData:
         self.powerdog_command_desc_value: str = 'RX'
         self.powerdog_command_reset: str = 'RESEt'
         self.powerdog_command_relay: str = 'RELAY ON'
+        self.is_app_shutdown: bool = False
+        self.scanner_time: float = 0.0
         self.homeassistant_status_topic: str = 'homeassistant/status'
         self.homeassistant_status_online: str = 'online'
         self.homeassistant_status_offline: str = 'offline'
@@ -70,10 +73,12 @@ class App:
         self.ble_scanner_start()
         self.broker_start()
         self.create_task(self.do_native_disconnect())
+        self.create_task(self.ble_device_check())
 
     async def app_stop(self) -> None:
         self.logger.debug('App > stopping')
-        self.service.ble_scanner.stop_scanner()
+        self.data.is_app_shutdown = True
+        self.ble_scanner_stop()
         self.service.ble_client.stop_client()
         self.service.mq_client.stop_client()
         self.event_to_action_loop.set()
@@ -100,6 +105,27 @@ class App:
             self.logger.info('BLE native > disconnect')
             await BluetoothNative().disconnect(self.data.pd_config.address)
 
+    async def ble_device_check(self) -> None:
+        """ Loop until shutdown and periodically scan for BLE device otherwise send OFF status """
+        device_check_wait = 10
+        if self.data.pd_config.limit_quiet_sec > device_check_wait:
+            device_check_wait = self.data.pd_config.limit_quiet_sec
+
+        await asyncio.sleep(device_check_wait)
+
+        while not self.data.is_app_shutdown:
+            # ble_client OFF, ble_scanner OFF then start scanner
+            if not self.service.ble_client.is_active() and not self.service.ble_scanner.is_active():
+                self.ble_scanner_start()
+
+            # ble_client OFF, ble_scanner ON, scanner_time overdue then send OFF status and stop scanner
+            if not self.service.ble_client.is_active() and self.service.ble_scanner.is_active() and time.time() - self.data.scanner_time >= self.data.pd_config.limit_quiet_sec:
+                self.publish_broker_data(PowerdogData(data_type=PowerdogDataType.OFF.value))
+                self.logger.info('BLE client > OFF')
+                self.ble_scanner_stop()
+
+            await asyncio.sleep(device_check_wait)
+
     def on_event_data(self, event_data: EventData) -> None:
         self.event_queue.put_nowait(event_data)
 
@@ -107,8 +133,10 @@ class App:
         return self.task_group.create_task(coro)
 
     def ble_scanner_start(self) -> None:
-        self.logger.debug('BLE scanner > start')
-        self.task_group.create_task(self.service.ble_scanner.start_scanner())
+        if not self.service.ble_scanner.is_active():
+            self.logger.info('BLE scanner > start')
+            self.task_group.create_task(self.service.ble_scanner.start_scanner())
+            self.data.scanner_time = time.time()
 
     def on_scanner_device(self, ble_device: BLEDevice) -> None:
         if ble_device.address == self.data.pd_config.address and ble_device.name:
@@ -123,8 +151,9 @@ class App:
             self.logger.info(f'BLE scanner > device {ble_device}')
 
     def ble_scanner_stop(self) -> None:
-        self.logger.debug('BLE scanner > stop')
+        self.logger.info('BLE scanner > stop')
         self.service.ble_scanner.stop_scanner()
+        self.data.scanner_time = 0.0
 
     def ble_client_start(self) -> None:
         self.logger.debug(f'BLE client > start {self.data.ble_device}')
@@ -137,6 +166,10 @@ class App:
         self.logger.info('BLE client > metadata')
         self.data.ble_device_meta = meta_data
         self.write_meta_to_file()
+
+    def on_ble_client_disconnect(self) -> None:
+        self.publish_broker_data(PowerdogData(data_type=PowerdogDataType.OFF.value))
+        self.logger.info('BLE client > OFF')
 
     def write_meta_to_file(self):
         if self.data.pd_config.device_meta_path:
@@ -330,7 +363,7 @@ class App:
             elif event.name == BluetoothEvent.BLE_CLIENT_META_FAILURE:
                 self.logger.warning(f'BLE client > {event.name}')
             elif event.name == BluetoothEvent.BLE_CLIENT_DISCONNECTED:
-                self.logger.info('BLE client > disconnected')
+                self.on_ble_client_disconnect()
             # Broker events
             elif event.name == BrokerEvent.BROKER_CLIENT_CONNECTED:
                 self.logger.info('Broker > connected')
