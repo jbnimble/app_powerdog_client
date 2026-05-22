@@ -1,6 +1,6 @@
 import importlib.metadata as meta
 
-from powerdog.data import GattData, DiscoveryPayload, PowerdogModelType, BluetoothDeviceMeta
+from powerdog.data import DiscoveryPayload, PowerdogModelType, BluetoothDeviceMeta
 from powerdog.util import PowerdogUtil
 
 # MQTT Discovery with Home Assistant
@@ -49,58 +49,6 @@ from powerdog.util import PowerdogUtil
 
 class MqttDiscovery:
     """ Generate the Home Assistant MQTT integration's discovery payload """
-    def __init__(self, device_name: str = None, device_address: str = None, gatt_data: [GattData] = None):
-        self.device_name = device_name
-        self.device_address = device_address
-        self.gatt_data = gatt_data
-        # defaults due to failure on input data
-        if not self.device_name:
-            self.device_name = 'PMX Unknown'
-        if not self.device_address:
-            self.device_address = 'aa:bb:cc:dd:ee:ff'
-        if not self.gatt_data:
-            self.gatt_data = []
-
-    def get_payload(self) -> DiscoveryPayload:
-        result = DiscoveryPayload()
-
-        origin_name = 'powerdog'
-        device_name = self.device_name.strip()
-        device_model = device_name.split(' ')[0].strip() + device_name.split(' ')[-1].strip()
-        device_addr = self.device_address
-
-        fw_version = PowerdogUtil.get_gatt_data_value('Firmware Revision String', self.gatt_data)
-        sw_version = PowerdogUtil.get_gatt_data_value('Software Revision String', self.gatt_data)
-        manufacturer = PowerdogUtil.get_gatt_data_value('Manufacturer Name String', self.gatt_data)
-
-        result.command_topic = 'powerdog/set'
-        # device, see frontend > ha-device-info-card.ts
-        result.device = {
-            'name': device_name,
-            'identifiers': [device_name, device_addr],
-            'model': device_model,
-            'model_id': PowerdogUtil.get_gatt_data_value('Model Number String', self.gatt_data),
-            'manufacturer': f'Powerdog and BLE@{manufacturer}',
-            'serial_number': PowerdogUtil.get_gatt_data_value('Serial Number String', self.gatt_data),
-            'sw_version': f'Powerdog version {meta.version(origin_name)}',
-            'hw_version': f'BLE firmware {fw_version}, BLE software {sw_version}',
-            'connections': [['bluetooth', device_addr]],
-        }
-        # origin
-        result.origin = {
-            'name': origin_name,
-            'sw_version': meta.version(origin_name),
-            'support_url': 'https://github.com/jbnimble/app_powerdog_client',
-        }
-        # availability
-        result.availability = []
-        result.availability.append({
-            'topic': 'powerdog/status',
-        })
-        # components
-        result.components = MqttDiscovery.components(self.device_name)
-
-        return result
 
     def components(device_name: str = None) -> {}:
         result = {

@@ -1,6 +1,6 @@
 from typing import Any
 
-from powerdog.data import PowerdogModelType, GattData, PowerdogData, PowerdogDataError, PowerdogDataType, BrokerMessage, BluetoothDeviceMeta, DeviceMetaService, DeviceMetaChar, DeviceMetaDesc
+from powerdog.data import PowerdogModelType, PowerdogData, PowerdogDataError, PowerdogDataType, BrokerMessage, BluetoothDeviceMeta, DeviceMetaService, DeviceMetaChar, DeviceMetaDesc
 
 class PowerdogUtil:
     def bytearray_to_ascii(data: bytearray) -> str:
@@ -18,15 +18,6 @@ class PowerdogUtil:
             result = PowerdogModelType.SINGLE
         elif name and name.startswith('PMD'):
             result = PowerdogModelType.DOUBLE
-        return result
-
-    def get_gatt_data_value(desc: str, gatt_data: [GattData]) -> str:
-        result = 'Unknown'
-        if gatt_data:
-            for data in gatt_data:
-                if data and data.description == desc:
-                    result = data.data_ascii
-                    break
         return result
 
     def get_broker_messages(data: PowerdogData) -> [BrokerMessage]:

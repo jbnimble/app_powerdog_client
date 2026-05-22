@@ -48,5 +48,5 @@ Subscribe topics:
 # Activate virtualenv
 source .venv/bin/activate
 # Run app
-./src/powerdog/client.py --config-file=data/config.ini
+./src/powerdog/app.py --config-file=data/config.ini
 ```

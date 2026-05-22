@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 from enum import Enum, auto
+from typing import Any
 
 from bleak import BleakGATTCharacteristic
 
@@ -91,19 +92,6 @@ class PowerdogModelType(Enum):
     DOUBLE = auto()
     UNKNOWN = auto()
 
-class GattType(Enum):
-    CHARACTERISTIC = auto()
-    DESCRIPTOR = auto()
-
-@dataclass
-class GattData:
-    uuid: str = None
-    data_hex: str = None
-    data_ascii: str = None
-    description: str = None
-    error_code: int = None
-    gatt_type: GattType = None
-
 @dataclass
 class BLENotification:
     sender: BleakGATTCharacteristic = None
@@ -179,3 +167,22 @@ class BluetoothDeviceMeta:
                                 if desc and desc.asc_data and desc.asc_data == desc_data:
                                     return char.uuid
         return result
+
+class EventData:
+    def __init__(self, name: str, data: Any = None):
+        self._name = name
+        self._data = data
+
+    @property
+    def name(self) -> str:
+        return self._name
+
+    @property
+    def data(self) -> Any:
+        return self._data
+
+    def __str__(self) -> str:
+        if self._data:
+            return f'{{"type": "EventData", "name": "{self._name}", "data": "{self._data}"}}'
+        else:
+            return f'{{"type": "EventData", "name": "{self._name}"}}'

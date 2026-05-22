@@ -1,18 +1,14 @@
 import asyncio
-from asyncio import Task
 from asyncio.subprocess import Process
 from enum import StrEnum
 import logging
 import platform
 from typing import Callable
-from uuid import UUID
 
 from bleak import BleakClient, BleakScanner, BLEDevice, AdvertisementData, BleakGATTCharacteristic
-from bleak.backends.service import BleakGATTService
-from bleak.exc import BleakDeviceNotFoundError, BleakError, BleakGATTProtocolError
+from bleak.exc import BleakGATTProtocolError
 
-from powerdog.event import EventData
-from powerdog.data import GattData, GattType, BluetoothDeviceMeta, DeviceMetaService, DeviceMetaChar, DeviceMetaDesc, BLENotification
+from powerdog.data import BluetoothDeviceMeta, DeviceMetaService, DeviceMetaChar, DeviceMetaDesc, BLENotification, EventData
 from powerdog.util import PowerdogUtil
 
 class BluetoothEvent(StrEnum):

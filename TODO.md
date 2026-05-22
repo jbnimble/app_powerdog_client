@@ -1,5 +1,10 @@
 # Ideas for future
 
+- on start if BLE device not available, use JSON to initialize Home Assistant
+- MQTT command to tell app to restart, as automation target when Victron or other device detects shore power
+- when no shore power, mark offline to HA and periodic check if device found in scanner
+- periodic health checker, last test ran for almost 3 days before it seemed like the path to HA died
+- reset everything without sending "offline" on health checker fail or on schedule
 - add availability in MQTT discovery payload for "RELAY ON" button so it can only be pressed during certain error conditions
 - change to single topic for sending data to Home Assistant and send JSON object
 - create an event workflow diagram

@@ -2,9 +2,8 @@
 
 import argparse
 import asyncio
-from asyncio import Task, TaskGroup, Queue, QueueEmpty
+from asyncio import TaskGroup, Queue
 from enum import StrEnum
-from functools import partial
 import json
 import logging
 from logging import Logger
@@ -14,10 +13,9 @@ from bleak import BLEDevice
 
 from powerdog.ble import BluetoothEvent, BluetoothEventClient, BluetoothEventScanner, BluetoothNative
 from powerdog.config import PowerdogConfig, BrokerConfig, ClientConfig, Configuration
-from powerdog.data import PowerdogData, GattData, PowerdogModelType, BluetoothDeviceMeta, DiscoveryPayload, BLENotification
+from powerdog.data import PowerdogData, PowerdogModelType, BluetoothDeviceMeta, DiscoveryPayload, BLENotification, EventData
 from powerdog.ha import MqttDiscovery
 from powerdog.mq import BrokerEventClient, BrokerMessage, BrokerEvent, BrokerOneTimePublish
-from powerdog.event import EventData
 from powerdog.pd import PowerdogDecoder, DataLimiter, PowerdogDataType, PowerdogMessageMonitor
 from powerdog.util import PowerdogUtil
 
