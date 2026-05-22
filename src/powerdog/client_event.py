@@ -38,12 +38,16 @@ class AppData:
         self.prev_data: PowerdogData = None
         self.powerdog_discovery_topic: str = 'homeassistant/device/powerdog/config'
         self.powerdog_status_topic: str = 'powerdog/status'
+        self.powerdog_status_online: str = 'online'
+        self.powerdog_status_offline: str = 'offline'
         self.powerdog_command_topic: str = 'powerdog/set'
         self.powerdog_notify_desc_value: str = 'TX'
         self.powerdog_command_desc_value: str = 'RX'
         self.powerdog_command_reset: str = 'RESEt'
         self.powerdog_command_relay: str = 'RELAY ON'
         self.homeassistant_status_topic: str = 'homeassistant/status'
+        self.homeassistant_status_online: str = 'online'
+        self.homeassistant_status_offline: str = 'offline'
         self.ble_device: BLEDevice = None
 
 class AppEvent(StrEnum):
@@ -164,6 +168,8 @@ class App:
         if self.data.br_config.broker_host:
             self.logger.debug(f'Broker > configuring {self.data.br_config.broker_host}:{self.data.br_config.broker_port}')
             self.task_group.create_task(self.service.mq_client.start_client())
+        else:
+            self.logger.info('Broker > skipped')
 
     def broker_stop(self) -> None:
         self.logger.info('Broker > stop')
@@ -245,14 +251,14 @@ class App:
         payload = str(message.payload, encoding='utf-8')
         if message.topic == self.data.powerdog_discovery_topic:
             self.on_event_data(EventData(BrokerEvent.BROKER_CLIENT_DISCOVERY_SENT, message))
-        elif message.topic == self.data.powerdog_status_topic and payload == 'online':
+        elif message.topic == self.data.powerdog_status_topic and payload == self.data.powerdog_status_online:
             self.logger.info(f'Received {message.topic}={payload}')
             self.ble_client_notify_start()
-        elif message.topic == self.data.homeassistant_status_topic and payload == 'online':
+        elif message.topic == self.data.homeassistant_status_topic and payload == self.data.homeassistant_status_online:
             # HomeAssistant online
             self.logger.info(f'Received {message.topic}={payload}')
             self.on_homeassistant_online()
-        elif message.topic == self.data.homeassistant_status_topic and payload == 'offline':
+        elif message.topic == self.data.homeassistant_status_topic and payload == self.data.homeassistant_status_offline:
             # HomeAssistant offline
             self.logger.info(f'Received {message.topic}={payload}')
             self.ble_client_notify_stop()
@@ -323,8 +329,8 @@ class App:
                 self.ble_client_notify_start()
             elif event.name == BluetoothEvent.BLE_CLIENT_META_FAILURE:
                 self.logger.warning(f'BLE client > {event.name}')
-            # elif event.name == BluetoothEvent.BLE_CLIENT_DISCONNECTED:
-            #     self.logger.info('BLE client > disconnected')
+            elif event.name == BluetoothEvent.BLE_CLIENT_DISCONNECTED:
+                self.logger.info('BLE client > disconnected')
             # Broker events
             elif event.name == BrokerEvent.BROKER_CLIENT_CONNECTED:
                 self.logger.info('Broker > connected')
@@ -369,7 +375,7 @@ class App:
 
         if self.data.br_config.broker_host:
             broker_otp = BrokerOneTimePublish(config=self.data.br_config)
-            await broker_otp.publish(BrokerMessage(self.data.powerdog_status_topic, 'offline'))
+            await broker_otp.publish(BrokerMessage(self.data.powerdog_status_topic, self.data.powerdog_status_offline))
 
         self.logger.info('App > stopped')
 
