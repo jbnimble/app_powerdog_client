@@ -248,7 +248,7 @@ class BluetoothEventScanner:
             self.logger.error(f'Scanner failure {e}')
             self._on_event(EventData(BluetoothEvent.BLE_SCANNER_FAILED))
         self._context = None
-        self.logger.info('Stopped')
+        self.logger.debug('Stopped')
 
     def stop_scanner(self) -> None:
         self._context_keep_alive.set()
