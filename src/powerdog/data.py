@@ -69,7 +69,7 @@ class PowerdogDataError(Enum):
 
 class PowerdogDataType(Enum):
     """
-    Three types of data values:
+    Types of data values:
     - DATA, has voltage/amperage/watts/power/error values
     - LINE1, indicates the previously received data value was for LINE1
     - LINE2, indicates the previously received data value was for LINE2
