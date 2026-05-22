@@ -48,7 +48,7 @@ class PowerdogUtil:
         """
         result = []
 
-        if not data.data_type:
+        if data.data_type == PowerdogDataType.OFF.value:
             result.append(BrokerMessage(topic=f'powerdog/L1/error_status', payload=PowerdogUtil.get_status_message(data=data)))
             result.append(BrokerMessage(topic=f'powerdog/L2/error_status', payload=PowerdogUtil.get_status_message(data=data)))
 
@@ -73,7 +73,7 @@ class PowerdogUtil:
         Map the error code and data to textual error descriptions
         Add unsafe/high/low context for voltage errors
         """
-        result = 'OFF'
+        result = 'Unknown'
 
         if PowerdogDataError.NONE.value == data.error:
             result = 'ON'
@@ -104,6 +104,8 @@ class PowerdogUtil:
             result = 'RELAY'
         elif PowerdogDataType.RESET.value == data.data_type:
             result = 'RESET'
+        elif PowerdogDataType.OFF.value == data.data_type:
+            result = 'OFF'
         return result
 
     def json_serializer(obj: Any) -> Any:

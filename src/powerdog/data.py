@@ -70,6 +70,7 @@ class PowerdogDataError(Enum):
 class PowerdogDataType(Enum):
     """
     Types of data values:
+    - OFF, BLE device not found, assume to be off
     - DATA, has voltage/amperage/watts/power/error values
     - LINE1, indicates the previously received data value was for LINE1
     - LINE2, indicates the previously received data value was for LINE2
@@ -78,6 +79,7 @@ class PowerdogDataType(Enum):
     30Amp devices only use LINE1
     50Amp devices use both LINE1 and LINE2
     """
+    OFF = -1
     DATA = 0
     LINE1 = 1
     LINE2 = 2
