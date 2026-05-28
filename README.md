@@ -50,3 +50,11 @@ source .venv/bin/activate
 # Run app
 ./src/powerdog/app.py --config-file=data/config.ini
 ```
+
+## Disclaimer
+
+This git repository is an independent open-source project. It is **not** affiliated with, endorsed by, or sponsored by Hughes Autoformers. All references to Hughes products and protocols are nominative, for interoperability with hardware their owners have already paid for. Use at your own risk.
+
+## License
+
+See [LICENSE](LICENSE) for the full text of the `BSD 2-Clause License`
